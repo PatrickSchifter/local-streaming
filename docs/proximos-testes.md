@@ -81,6 +81,11 @@ Serve para achar a margem real, não para usar em produção. Se passar sem frei
 o teto de 17 Mbps do §4e era conservador e vale reabrir o número. Se frear, o teto
 está confirmado por um terceiro método e o T1 vira o default definitivo.
 
+> 🔼 **Subiu de prioridade depois do T4.** O receptor registrou **picos de
+> 17.47 Mbps passando limpos** (§4h) — acima do próprio teto que o §4e estimou.
+> Pico não é taxa sustentada, então isso não derruba o número, mas indica que ele
+> é piso conservador. O T2 virou a forma mais direta de descobrir a margem real.
+
 ---
 
 ## T3 — Jogo real ✅ **executado em 29/08 — a DDA captura**
@@ -168,5 +173,5 @@ default não custa nada. Fica registrado para não parecer esquecido.
 |---|---|---|---|---|---|---|---|---|
 | T1 | hevc | 15M | 1200 | 52 | 0.995x | não medido | não medido | ⚠️ inconclusivo — só 1.67 Mbps no caminho (§4f) |
 | T2 | hevc | 20M | 1200 | | | | | |
-| T3 | hevc | 15M | 1200 | 52 | 0.999x | não medido | não medido | ✅ DDA captura o jogo (§4g). Bitrate só 8.96 Mbps — título fácil, não testa 15M |
-| T4 | hevc | 15M | 1200 | 56 (56.2 inst.) | 1.000x | não medido | não medido | ✅ **10:26 contínuos, zero erro, sem degradação (§4h)** |
+| T3 | hevc | 15M | 1200 | 52 | 0.999x | **0** | **0** | ✅ DDA captura o jogo (§4g). 155k pacotes, perda zero. Média 9.6 Mbps, pico 15.1 |
+| T4 | hevc | 15M | 1200 | 56 (56.2 inst.) | 1.000x | **0** | **0** | ✅ **10:26 contínuos, 508k pacotes, perda zero, sem deriva (§4h)** |

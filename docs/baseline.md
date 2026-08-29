@@ -973,7 +973,10 @@ O T3 tem duas perguntas e só uma foi respondida. A DDA funciona ✅. O **pipeli
 1. **4:3 em pillarbox.** Perto de um terço da largura do frame 1920x1080 é barra
    preta, que comprime para quase zero bit.
 2. **Cenários pré-renderizados.** Só o personagem se move sobre fundo estático —
-   conteúdo trivial para o encoder. É o que explica 9 Mbps com `-b:v 15M`.
+   conteúdo trivial para o encoder, o que explica a *média* de ~9 Mbps com
+   `-b:v 15M`. Ressalva: a medição do Mac registrou **picos de 15.12 Mbps**, ou
+   seja, nos momentos de movimento o encoder *encosta* no teto configurado. O que
+   falta é carga sustentada, não carga de pico.
 3. **Fonte de 30 fps.** O T3 prometia medir o pipeline sob 60 fps contínuos; com
    uma fonte de 30 isso não foi testado.
 
@@ -1008,96 +1011,16 @@ devagar — não apareceu.
 
 ### ⏳ O que segue não coletado
 
-- **Lado do Mac** (`RCV-DROPPED`, erros de decode, imagem limpa ou corrompida).
-  Terceira rodada seguida sem essa metade — é o mesmo ponto cego que produziu a
-  leitura errada do §4d.
+- ~~**Lado do Mac**~~ ✅ **coletado** — ver a subseção do receptor abaixo: 155 mil
+  pacotes, perda zero, imagem limpa confirmada por print na chegada.
 - **Fullscreen exclusivo ou borderless?** Não confirmado. O `proximos-testes.md`
   avisa que borderless é o caso fácil e já estava coberto pelo desktop; se a
   corrida foi em borderless, o achado é mais fraco do que parece.
 - **Jogo 3D moderno**, de preferência com anti-cheat — o cenário onde a captura
   costuma ser bloqueada, e que este título não representa.
 
----
+### 📡 Lado do Mac — medição do receptor
 
-## 4h. ✅ T4 — 10 min contínuos. O critério de saída da Fase 0 caiu.
-
-Data: 2026-08-29. Config: `hevc_nvenc`, 15M, buffer 1200 ms, jogo real na tela.
-
-```
-frame=35210  fps=56  speed=1.000x  drop=605  8.37 Mbps  (10:26.71)
-```
-
-Terminou pela desconexão do caller (§4e), **não por colapso** — o stream estava
-saudável no instante em que morreu. O PLANO define a saída da Fase 0 como "estável
-por 10 minutos": **batido, com folga de 27 s.** Histórico das corridas anteriores:
-13 s, 32 s, 37 s, 3 min. Esta é 17x a mediana.
-
-### Nenhuma degradação em 10 minutos
-
-| Momento | frame | drop | bitrate | speed |
-|---|---|---|---|---|
-| 1:04 | 3410 | 23 | 8.01 Mbps | 0.998x |
-| 3:54 | 12649 | 307 | 8.59 Mbps | 1.000x |
-| 8:21 | 28193 | 581 | 8.48 Mbps | 1.000x |
-| 10:26 | 35210 | 605 | 8.37 Mbps | 1.000x |
-
-`speed` cravado em 1.000x do minuto 1 ao 10. Acúmulo de buffer ou drift de clock
-apareceriam como queda lenta e progressiva — não apareceu. O bitrate ficou plano em
-~8.4 Mbps. **Zero erro no log em 626 segundos.**
-
-### 🔴 Achado: `fps=` do ffmpeg é média acumulada, não taxa instantânea
-
-Isso corrige a leitura de **todos** os números de fps registrados neste documento.
-
-Durante a corrida o `fps=` subiu de forma monótona: 51 → 52 → 53 → 54 → 56. Não é o
-pipeline acelerando. `fps = frame ÷ elapsed` desde o início (confere exato:
-35210 ÷ 626.84 = 56.2), então o custo do arranque vai sendo diluído e o número
-**converge para cima**. Uma corrida curta reporta um fps artificialmente baixo.
-
-A taxa real sai da diferença entre duas amostras:
-
-| Trecho | Δframe / Δt | fps instantâneo |
-|---|---|---|
-| 1:04 → 3:54 | 9239 / 170.2 s | **54.3** |
-| 3:54 → 8:21 | 15544 / 267.1 s | **58.2** |
-| 8:21 → 10:26 | 7017 / 125.0 s | **56.1** |
-
-**O pipeline entrega 54–58 fps com jogo real, média 56.2** — déficit de ~6% contra
-60, não os 13% que os acumulados sugeriam. A mesma conta aplicada ao §4g devolve
-~52 fps instantâneos naquela corrida, e ~58 no controle sem rede.
-
-Consequências:
-
-- **O `ddagrab` não "limita em 52 fps".** O teto é ~58, e o 52 do §4g era cena
-  específica do jogo. O §7 foi corrigido.
-- **Corridas curtas subestimam o fps.** Os 57 fps do controle do §4f (15 s) e os
-  52–58 espalhados pelo §4a–§4d são todos acumulados — comparáveis entre si só se
-  as durações forem parecidas. **Comparar fps de corridas de duração diferente é
-  erro de método.**
-- A regra 6 do `proximos-testes.md` ("compare contra 57 fps") foi reescrita para
-  exigir taxa instantânea.
-
-### O `drop` acompanha a cena, não a rede
-
-Taxa por trecho: **0.36/s → 1.67/s → 1.03/s → 0.19/s**. Varia quase 9x dentro da
-mesma corrida, com a rede constante e `speed` em 1.000x o tempo todo. Não é
-congestionamento: é o `ddagrab` entregando menos frame quando a cena muda pouco.
-Confirma a leitura do §4g e encerra a suspeita levantada lá.
-
-### O que isto fecha — e o que não fecha
-
-✅ **Estabilidade longa**, que era o critério de saída da Fase 0 e nunca tinha sido
-medido. ✅ **A rede a ~8.4 Mbps sai do caminho crítico**: 10 minutos sem cobrar
-1 fps nem 1 ms de drift.
-
-❌ **Não fecha os 15 Mbps de produção.** Este título gera 8.4 Mbps; o teto do §4e
-segue cercado entre 8.4 (limpo por 10 min) e 20 (freia, §4d).
-❌ **Lado do Mac não coletado** pela quarta rodada seguida — `RCV-DROPPED`, erros de
-decode e se a imagem chegou limpa continuam sem medição.
-
----
-
-## 4g. ✅ T3 — jogo real capturado. O risco existencial do projeto acabou
 
 Data: 2026-08-29. Resident Evil rodando no Windows, sender em
 `hevc_nvenc -Bitrate 15M -LatencyMs 1200`, receptor no Mac por ~3 minutos.
@@ -1175,7 +1098,85 @@ Resident Evil clássico é um jogo leve e antigo. Média de 9.6 Mbps com picos n
 
 ---
 
-## 4h. ✅ T4 — 10 minutos contínuos, perda zero, sem deriva
+## 4h. ✅ T4 — 10 min contínuos. O critério de saída da Fase 0 caiu.
+
+Data: 2026-08-29. Config: `hevc_nvenc`, 15M, buffer 1200 ms, jogo real na tela.
+
+```
+frame=35210  fps=56  speed=1.000x  drop=605  8.37 Mbps  (10:26.71)
+```
+
+Terminou pela desconexão do caller (§4e), **não por colapso** — o stream estava
+saudável no instante em que morreu. O PLANO define a saída da Fase 0 como "estável
+por 10 minutos": **batido, com folga de 27 s.** Histórico das corridas anteriores:
+13 s, 32 s, 37 s, 3 min. Esta é 17x a mediana.
+
+### Nenhuma degradação em 10 minutos
+
+| Momento | frame | drop | bitrate | speed |
+|---|---|---|---|---|
+| 1:04 | 3410 | 23 | 8.01 Mbps | 0.998x |
+| 3:54 | 12649 | 307 | 8.59 Mbps | 1.000x |
+| 8:21 | 28193 | 581 | 8.48 Mbps | 1.000x |
+| 10:26 | 35210 | 605 | 8.37 Mbps | 1.000x |
+
+`speed` cravado em 1.000x do minuto 1 ao 10. Acúmulo de buffer ou drift de clock
+apareceriam como queda lenta e progressiva — não apareceu. O bitrate ficou plano em
+~8.4 Mbps. **Zero erro no log em 626 segundos.**
+
+### 🔴 Achado: `fps=` do ffmpeg é média acumulada, não taxa instantânea
+
+Isso corrige a leitura de **todos** os números de fps registrados neste documento.
+
+Durante a corrida o `fps=` subiu de forma monótona: 51 → 52 → 53 → 54 → 56. Não é o
+pipeline acelerando. `fps = frame ÷ elapsed` desde o início (confere exato:
+35210 ÷ 626.84 = 56.2), então o custo do arranque vai sendo diluído e o número
+**converge para cima**. Uma corrida curta reporta um fps artificialmente baixo.
+
+A taxa real sai da diferença entre duas amostras:
+
+| Trecho | Δframe / Δt | fps instantâneo |
+|---|---|---|
+| 1:04 → 3:54 | 9239 / 170.2 s | **54.3** |
+| 3:54 → 8:21 | 15544 / 267.1 s | **58.2** |
+| 8:21 → 10:26 | 7017 / 125.0 s | **56.1** |
+
+**O pipeline entrega 54–58 fps com jogo real, média 56.2** — déficit de ~6% contra
+60, não os 13% que os acumulados sugeriam. A mesma conta aplicada ao §4g devolve
+~52 fps instantâneos naquela corrida, e ~58 no controle sem rede.
+
+Consequências:
+
+- **O `ddagrab` não "limita em 52 fps".** O teto é ~58, e o 52 do §4g era cena
+  específica do jogo. O §7 foi corrigido.
+- **Corridas curtas subestimam o fps.** Os 57 fps do controle do §4f (15 s) e os
+  52–58 espalhados pelo §4a–§4d são todos acumulados — comparáveis entre si só se
+  as durações forem parecidas. **Comparar fps de corridas de duração diferente é
+  erro de método.**
+- A regra 6 do `proximos-testes.md` ("compare contra 57 fps") foi reescrita para
+  exigir taxa instantânea.
+
+### O `drop` acompanha a cena, não a rede
+
+Taxa por trecho: **0.36/s → 1.67/s → 1.03/s → 0.19/s**. Varia quase 9x dentro da
+mesma corrida, com a rede constante e `speed` em 1.000x o tempo todo. Não é
+congestionamento: é o `ddagrab` entregando menos frame quando a cena muda pouco.
+Confirma a leitura do §4g e encerra a suspeita levantada lá.
+
+### O que isto fecha — e o que não fecha
+
+✅ **Estabilidade longa**, que era o critério de saída da Fase 0 e nunca tinha sido
+medido. ✅ **A rede a ~8.4 Mbps sai do caminho crítico**: 10 minutos sem cobrar
+1 fps nem 1 ms de drift.
+
+❌ **Não fecha os 15 Mbps *sustentados*.** A média foi 8.4 Mbps. Mas a medição do
+Mac (abaixo) mostra que **os picos chegaram a 17.47 Mbps e passaram limpos** — o
+que enfraquece o teto de ~17 Mbps do §4e como limite rígido. Pico não é taxa
+sustentada, então o teto não está derrubado; está sob suspeita de ser conservador.
+✅ **Lado do Mac: coletado** nesta rodada, pela primeira vez em quatro. Ver abaixo.
+
+### 📡 Lado do Mac — medição do receptor
+
 
 Mesma config do T3 (`hevc_nvenc 15M / buffer 1200 ms`, jogo real), corrida de
 **10 min 20 s** levada até o fim por tempo — **a primeira das onze corridas a não
@@ -1265,8 +1266,8 @@ Windows, então latência alta só afeta o sync com o microfone (§3.1 do PLANO)
 
 | Risco | Status |
 |---|---|
-| **Contrapressão do SRT freando o sender** | 🟢 **Não ocorre a ~8.4 Mbps (§4h):** 10 min com `speed` cravado em 1.000x. Segue real a 20 Mbps. Histórico: **Novo (§4d).** Com buffer de 1.2 s a 20 Mbps o sender caiu de 56–58 fps para **48 fps** e speed 0.942x. Buffer maior trocou descarte por espera, não alargou o caminho. Falta o log do receptor para saber se a imagem chegou limpa. |
-| **A rede não sustentar o bitrate** | 🟡 **Cercado (§4g):** passa limpo a **8.96 Mbps** por 3 min sem custar 1 fps; freia a **20 Mbps** (§4d). Os 15 Mbps de produção seguem sem medição. Histórico: **Menos grave do que o §4 concluiu, ver §4c.** Com o EEE desligado o TCP faz **68 Mbps** no sentido do stream. O "teto de 16 Mbps" era artefato da rajada do `iperf3 -u`; a SRT se pacea e tem ARQ. Pendente do experimento de buffer de 1.2 s. |
+| **Contrapressão do SRT freando o sender** | 🟢 **Não ocorre a ~8.4 Mbps (§4h):** 10 min com `speed` cravado em 1.000x no sender e `msBuf` do receptor plano em 1189–1196 ms por quarto de corrida — fila que não cresce, medida nas duas pontas. Segue real a 20 Mbps. Histórico: **Novo (§4d).** Com buffer de 1.2 s a 20 Mbps o sender caiu de 56–58 fps para **48 fps** e speed 0.942x. Buffer maior trocou descarte por espera, não alargou o caminho. Falta o log do receptor para saber se a imagem chegou limpa. |
+| **A rede não sustentar o bitrate** | 🟢 **Muito reduzido (§4g/§4h).** 10 min com **0 perdidos / 0 descartados / 0 retransmitidos** em 508 mil pacotes, e **picos de 17.47 Mbps passaram limpos** — o ARQ da SRT nem precisou agir. O teto de ~17 Mbps do §4e parece conservador; falta só carga *sustentada* a 15 Mbps. Histórico: Histórico: **Menos grave do que o §4 concluiu, ver §4c.** Com o EEE desligado o TCP faz **68 Mbps** no sentido do stream. O "teto de 16 Mbps" era artefato da rajada do `iperf3 -u`; a SRT se pacea e tem ARQ. Pendente do experimento de buffer de 1.2 s. |
 | **Caminho assimétrico (downlink do AP)** | 🔴 **Novo, e é o gargalo real.** Mac→Windows faz 93.5 Mbps de TCP e 60 Mbps de UDP com 0% de perda; Windows→Mac faz 68 Mbps de TCP e perde 5.5% de UDP a 25 Mbps. A única perna não compartilhada é **roteador → Mac**. Payload menor piora a perda, o que aponta para contenção de airtime. |
 | **EEE ligado na placa do Windows** | 🟢 **Resolvido.** `EEELinkAdvertisement` desligado: TCP passou de 42–57 para 66–69 Mbps e a variância sumiu. Não afetou a negociação em 100M, que é problema separado. |
 | **Ethernet do Windows a 100 Mbps** | 🟡 **Real, mas não explica tudo.** O I219-V é gigabit e negociou 100 Mbps. Só que a vazão medida foi 48.7 Mbps — metade do que o próprio link de 100 Mbps daria. Há um segundo gargalo no caminho, provavelmente o Wi-Fi do Mac ou o roteador. |
