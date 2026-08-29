@@ -12,11 +12,17 @@ param(
 )
 
 # ddagrab entrega frames D3D11 na GPU. Cada encoder quer um formato diferente:
-#  - NVENC precisa que os frames sejam mapeados pra CUDA e convertidos pra nv12
+#  - NVENC consome os frames D3D11 direto; o ffmpeg resolve a conversao sozinho
 #  - AMF/QSV consomem D3D11 direto
 #  - CPU exige baixar os frames pra RAM (custa caro, so pra diagnostico)
+#
+# NAO use "hwmap=derive_device=cuda,scale_cuda=format=nv12" aqui. O build do
+# gyan.dev nao consegue derivar um device CUDA a partir do D3D11 e falha com
+# "Failed to created derived device context: -40" (ENOSYS). O mesmo vale pro
+# "scale_d3d11", que nao configura o output pad. Medido na Fase 0: passar o
+# ddagrab direto pro nvenc da o mesmo desempenho, sem filtro nenhum no meio.
 switch ($Gpu) {
-  'nvidia' { $filter = "ddagrab=$($Monitor):framerate=$Fps,hwmap=derive_device=cuda,scale_cuda=format=nv12"
+  'nvidia' { $filter = "ddagrab=$($Monitor):framerate=$Fps"
              $venc   = @('-c:v','h264_nvenc','-preset','p5','-tune','hq','-rc','cbr') }
   'amd'    { $filter = "ddagrab=$($Monitor):framerate=$Fps"
              $venc   = @('-c:v','h264_amf','-quality','quality','-rc','cbr') }

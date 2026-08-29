@@ -143,7 +143,9 @@ local-streaming/
 
 ---
 
-> **Status:** Fase 0 em andamento — lado Mac concluído, lado Windows pendente.
+> **Status:** Fase 0 quase fechada — Mac e Windows levantados, toolchain instalado
+> nas duas pontas, SRT e NVENC validados. Falta o que exige as duas máquinas ligadas
+> ao mesmo tempo (Testes 1 e 2) e o teste com jogo real em fullscreen exclusivo.
 > Achados e números em [`docs/baseline.md`](docs/baseline.md).
 
 ## 4. Fases
@@ -158,19 +160,19 @@ existir — dá pra parar em qualquer uma e ainda ter algo usável.
 Provar que o caminho funciona **antes** de construir qualquer abstração em cima.
 Se essa fase falhar, a arquitetura muda e nada do resto foi desperdiçado.
 
-- [ ] Levantar o hardware: GPU do Windows (NVIDIA/AMD/Intel), chip do Mac, se a
+- [x] Levantar o hardware: GPU do Windows (NVIDIA/AMD/Intel), chip do Mac, se a
       conexão entre os dois é cabo ou WiFi.
-- [ ] Instalar `ffmpeg` full build nos dois lados (Windows: gyan.dev / BtbN;
+- [x] Instalar `ffmpeg` full build nos dois lados (Windows: gyan.dev / BtbN;
       Mac: `brew install ffmpeg`). Confirmar `ffmpeg -encoders | grep nvenc` e
       `ffmpeg -filters | grep ddagrab` no Windows.
-- [ ] Descobrir o IP local do Windows e liberar a porta 9000/UDP no Windows Firewall.
+- [x] Descobrir o IP local do Windows e liberar a porta 9000/UDP no Windows Firewall.
 - [ ] **Teste 1 — só vídeo, na mão.** No Windows:
       `ffmpeg -f lavfi -i ddagrab=0:framerate=60 -c:v h264_nvenc -preset p5 -tune ll -b:v 30M -f mpegts "srt://0.0.0.0:9000?mode=listener"`
       No Mac: `ffplay "srt://<IP-WIN>:9000?mode=caller"`.
 - [ ] **Teste 2 — dentro do OBS.** Media Source com a mesma URL SRT.
 - [ ] Medir: throughput real (`iperf3` entre as máquinas), latência ponta-a-ponta
       (cronômetro na tela do Windows filmado pela cena do OBS), estabilidade em 10min.
-- [ ] Registrar tudo em `docs/baseline.md` — os números viram a referência de regressão.
+- [x] Registrar tudo em `docs/baseline.md` — os números viram a referência de regressão.
 
 **Saída:** imagem do jogo aparecendo dentro do OBS no Mac, sem áudio, estável por
 10 minutos, com os comandos exatos anotados.
