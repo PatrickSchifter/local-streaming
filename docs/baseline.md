@@ -1010,6 +1010,78 @@ Resident Evil clássico é um jogo leve e antigo. Média de 9.6 Mbps com picos n
 
 ---
 
+## 4h. ✅ T4 — 10 minutos contínuos, perda zero, sem deriva
+
+Mesma config do T3 (`hevc_nvenc 15M / buffer 1200 ms`, jogo real), corrida de
+**10 min 20 s** levada até o fim por tempo — **a primeira das onze corridas a não
+terminar por desconexão do receptor.**
+
+| Métrica | Valor |
+|---|---|
+| Duração | **619 s** |
+| Pacotes / volume | **508.934** · **672 MB** |
+| `packetsLost` / `packetsDropped` / `packetsRetransmitted` / `packetsBelated` | **0 / 0 / 0 / 0** |
+| `RCV-DROPPED` / erros de decode | **0 / 0** |
+| Bitrate | min 3.18 · média **9.20** · pico **17.47** Mbps |
+| RTT | 1.89 – 4.86 ms (média 2.56) |
+| **fps de chegada** | **57** · `speed=1.01x` · 34.878 frames |
+
+### ✅ Fecha a pergunta do fps que o T3 deixou aberta
+
+O §4g não pôde medir framerate de chegada porque o pipeline do observador estava
+sobrecarregado. Corrigido aqui — só `-f null`, sem extração de frame — e o receptor
+rodou a **`speed=1.01x`**, acima do tempo real. O número é válido:
+
+**57 fps na chegada**, contra os **57 fps** da corrida de controle *sem rede* do
+§4f. **O caminho de rede não custa framerate nenhum.** O que sobra é o
+comportamento do `ddagrab`, já documentado no §7.
+
+### ✅ Sem deriva: o teste que 3 minutos não conseguiam fazer
+
+| Quarto da corrida | `msBuf` médio | Bitrate médio |
+|---|---|---|
+| Q1 | 1196.4 ms | 9.40 Mbps |
+| Q2 | 1188.7 ms | 9.13 Mbps |
+| Q3 | 1190.9 ms | 9.62 Mbps |
+| Q4 | **1192.0 ms** | 8.66 Mbps |
+
+**Plano ao longo de 10 minutos.** Nenhuma tendência de crescimento do buffer, que
+era o indicador de acumulação de fila. O risco de "drift de A/V ao longo de horas"
+do §5 do PLANO não se manifestou nesta escala.
+
+> Transiente registrado: `msBuf` bateu **1552 ms** uma vez, no Q1, e não repetiu
+> (máximo de Q2–Q4: 1201 ms). É acomodação de início de conexão. Não gerou perda,
+> mas explica por que buffer folgado ajuda: com 1200 ms de orçamento, um pico de
+> 1552 ms teria sido descartado se o buffer fosse justo.
+
+### 🔎 O pico de 17.47 Mbps passou limpo — e isso questiona o teto do §4e
+
+O §4e fixou o teto do caminho em **~17 Mbps**, a partir da taxa em que o sender foi
+freado por contrapressão. Nesta corrida o receptor registrou **17.47 Mbps com perda
+zero**.
+
+Não derruba o §4e — pico instantâneo não é o mesmo que taxa sustentada, e a média
+aqui foi 9.2 Mbps. Mas indica que **o teto é pelo menos tão alto quanto 17.47 Mbps**
+e que o número do §4e é piso conservador, não limite rígido. O T2 (HEVC a 20M)
+continua sendo o teste que resolve isso, e virou mais interessante do que parecia.
+
+### 🟡 O risco térmico do MacBook Air não foi realmente testado
+
+10 minutos sem degradação, mas a carga aqui foi **só decodificação**. O cenário do
+§5 do PLANO é decode **+ reencode para a Twitch + composição de cena**, que é
+substancialmente mais pesado. **O risco continua aberto** e só a Fase 4 responde.
+
+### 🔴 Ressalva de escopo: nada disso passou pelo OBS ainda
+
+A saída da Fase 0 no PLANO exige "imagem do jogo aparecendo **dentro do OBS**".
+Todas as medições até aqui usaram `srt-live-transmit` + `ffmpeg`. O Media Source do
+OBS tem a **própria** implementação de SRT (`libsrt.dylib`, §1) e o próprio
+buffering — **os números deste documento não transferem automaticamente para ele.**
+
+É o que falta para fechar a Fase 0, e é o §5 abaixo.
+
+---
+
 ## 5. Teste 3 — dentro do OBS ⏳ pendente
 
 Media Source apontando para
