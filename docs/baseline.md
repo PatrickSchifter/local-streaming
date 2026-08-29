@@ -1248,7 +1248,86 @@ buffering — **os números deste documento não transferem automaticamente para
 
 ---
 
-## 5. Teste 3 — dentro do OBS ⏳ pendente
+## 5. Teste 3 — dentro do OBS ✅ APROVADO — Fase 0 encerrada
+
+O último item da Fase 0: a saída exige "imagem do jogo aparecendo **dentro do
+OBS**", e todas as onze corridas anteriores usaram `srt-live-transmit` + `ffmpeg`.
+
+![jogo renderizado pelo OBS](img/fase0-obs-jogo.png)
+
+Captura obtida via `GetSourceScreenshot` do obs-websocket — ou seja, **é o
+compositor do OBS renderizando**, não uma foto de tela. `mediaState`:
+`OBS_MEDIA_STATE_PLAYING`.
+
+### Desempenho do OBS — 60 s de amostragem
+
+| Métrica | Valor |
+|---|---|
+| `activeFps` | **60.00** (constante nas 12 amostras) |
+| `renderSkippedFrames` | **0** |
+| `outputSkippedFrames` | **0** |
+| `cpuUsage` | **3.6 – 3.9 %** |
+
+O Media Source do OBS tem implementação própria de SRT (`libsrt.dylib`) e
+buffering próprio, então os números do §4h não transferiam automaticamente. **Eles
+se confirmaram** — e o OBS entregou 60 fps constantes, acima dos 57 do caminho
+`srt-live-transmit`.
+
+### Configuração que funciona (`basic/scenes/Untitled.json`)
+
+| Ajuste | Valor | Por quê |
+|---|---|---|
+| `input` | `srt://192.168.0.12:9000?mode=caller&latency=1200000` | **microssegundos** |
+| `input_format` | `mpegts` | |
+| `hw_decode` | `true` | VideoToolbox no M4 |
+| `close_when_inactive` | **`false`** | **crítico** — senão trocar de cena derruba o SRT *e o sender junto* (§4e) |
+| `restart_on_activate` | `false` | mesma razão |
+| `buffering_mb` | 2 | o buffer real é o do SRT; empilhar outro só soma latência |
+| `reconnect_delay_sec` | 2 | |
+
+> ⚠️ **Pegadinha de unidade, terceira variante.** O `latency` vale em
+> **microssegundos** no OBS (que passa a URL ao libavformat, como o ffmpeg do
+> Windows) e em **milissegundos** no `srt-live-transmit`. O §4d registrava só duas
+> variantes e sugeria que OBS seguia a convenção do srt-live-transmit — **estava
+> errado**. Três consumidores, duas convenções.
+
+### 🔎 Achado operacional: o log do OBS não registra reconexão bem-sucedida
+
+O log parou em:
+
+```
+20:31:18.773: MP: Failed to open media: 'srt://...'
+20:31:18.783: [Media Source ...]: Disconnected. Reconnecting...
+```
+
+e **nunca escreveu uma linha de sucesso** — mesmo com a fonte tocando. Diagnosticar
+saúde da fonte pelo log dá **falso negativo**.
+
+**A fonte de verdade é o obs-websocket**: `GetMediaInputStatus` devolve
+`OBS_MEDIA_STATE_PLAYING` e `GetStats` dá fps e frames descartados. Vale para a
+Fase 5 (supervisão) e a Fase 6 (automação): o health check nunca deve ler o log.
+
+Ferramenta guardada em `scripts/obs-probe.py` (auth v5 + screenshot + status).
+
+### ⚠️ Erro de método cometido aqui, registrado
+
+Enquanto o OBS falhava em conectar, sondei a porta com `srt-live-transmit` para
+descobrir de que lado estava o problema — **sabendo que isso consome a única
+conexão que o sender aceita** (§4e). Se o sender estivesse no ar, eu o teria
+derrubado. O diagnóstico estava certo (o sender realmente não estava escutando),
+mas o método arriscava destruir justamente o que ia testar.
+
+**Regra:** com o OBS em loop de reconexão, esperar o loop. Sondar com um segundo
+caller só depois de confirmar que o OBS desistiu.
+
+### O que a Fase 0 estabeleceu
+
+- ✅ `ddagrab` captura jogo em fullscreen (§4g) — risco existencial encerrado
+- ✅ 10 min contínuos, 508k pacotes, perda zero (§4h)
+- ✅ OBS renderiza a 60 fps com 0 frame descartado
+- ✅ Config de produção: `hevc_nvenc 15M` + buffer SRT de 1.2 s
+- 🟡 Aberto: térmico do Air sob **encode para a Twitch** (só a Fase 4 responde)
+- 🟡 Aberto: T2 (20 Mbps) e o teto real do caminho — o §4h viu 17.47 Mbps limpos
 
 Media Source apontando para
 `srt://<IP-WINDOWS>:9000?mode=caller&latency=120000`, `Input Format = mpegts`.

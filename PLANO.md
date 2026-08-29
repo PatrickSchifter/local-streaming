@@ -160,15 +160,9 @@ local-streaming/
 
 ---
 
-> **Status:** Fase 0 quase fechada. O SRT conecta e o vídeo chega no Mac, mas
-> chega degradado (~29 fps, macroblocos) porque os pacotes atrasam 850–975 ms
-> contra um buffer SRT de 120 ms. O `iperf3` isolou o culpado: **o caminho é
-> assimétrico** — Mac→Windows faz 93.5 Mbps limpos, Windows→Mac não. O gargalo é o
-> downlink do roteador para o Mac, não o cabo do Windows.
-> **Buffer de 1.2 s testado (`baseline` §4d):** não resolveu — o sender passou a
-> ser freado por contrapressão (48 fps contra 56–58). Falta o log do receptor para
-> fechar. Se confirmar, o próximo passo é **pôr o Mac no cabo** (adaptador USB-C).
-> Falta também o teste com jogo real em fullscreen exclusivo.
+> **Status:** ✅ **Fase 0 concluída** (2026-08-29). Jogo real capturado, 10 min
+> com perda zero, e OBS renderizando a 60 fps sem frame descartado. Config de
+> produção: `hevc_nvenc 15M` + buffer SRT 1.2 s. Próxima: **Fase 1**.
 > Achados e números em [`docs/baseline.md`](docs/baseline.md).
 
 ## 4. Fases
