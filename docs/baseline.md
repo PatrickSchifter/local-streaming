@@ -464,6 +464,84 @@ Isso não afeta o projeto: o Mac é o **caller** do SRT e conecta na UDP 9000 do
 Windows, que tem regra de allow explícita. Só significa que **`ping` não serve
 como teste de saúde** nesse sentido — use `iperf3` ou o próprio handshake SRT.
 
+## 4b. 🔴 Teste 1 parcial — SRT conecta, mas o stream chega quebrado
+
+Primeira execução conjunta (sender `win-test-video.ps1` no Windows, receptor
+headless no Mac). O handshake funciona pela LAN, mas o vídeo chega degradado.
+
+### O que foi medido
+
+| Item | Resultado |
+|---|---|
+| Handshake SRT pela LAN | ✅ `SRT source connected` |
+| Stream identificado | ✅ `h264 (Main) / 1920x1080 / yuv420p / 60 fps / mpegts` |
+| Frames recebidos | 🔴 **527 frames em 18.2 s de stream ≈ 29 fps** (metade dos 60) |
+| Integridade | 🔴 dezenas de `error while decoding MB` e `concealing N DC/AC/MV errors`, inclusive **em I-frames** |
+
+### Causa raiz: pacotes chegando ~900 ms atrasados
+
+O log do `srt-live-transmit` é inequívoco:
+
+```
+RCV-DROPPED 38 packet(s). Packet seqno %1646696756 delayed for 838.442 ms
+RCV-DROPPED 23 packet(s). ...                       delayed for 888.708 ms
+RCV-DROPPED 22 packet(s). ...                       delayed for 975.032 ms
+RCV-DROPPED 44 packet(s). ...                       delayed for 964.900 ms
+RCV-DROPPED 64 packet(s). ...                       delayed for 885.049 ms
+```
+
+O buffer do SRT está em **120 ms**. Tudo que chega depois disso é descartado por
+definição — não é perda de pacote, é **pacote velho demais para ser útil**.
+
+O atraso é **estável em torno de 850–975 ms**, não crescente e não errático. Essa
+assinatura é de **fila permanentemente cheia** em algum ponto do caminho
+(bufferbloat), não de jitter aleatório.
+
+### Três hipóteses, ainda não separadas
+
+1. **Oversubscription do caminho** — o sender oferece mais do que o caminho
+   entrega, e forma-se fila. Candidato principal. O link Ethernet do Windows é de
+   100 Mbps (§2) e o teste rodou com o default de **30 Mbps**.
+2. **Buffer do SRT pequeno demais para este caminho** — se o atraso for fila
+   *limitada*, subir a latência do SRT resolve sozinho. E, pelo §3.1 do PLANO,
+   **latência é barata aqui**: 1 s de buffer não custa nada, porque o jogo é
+   jogado no Windows.
+3. **Contrapressão do meu lado** — `srt-live-transmit → pipe → ffmpeg` com decode
+   por software poderia parar de drenar o socket. **Não descartada**: a bissecção
+   estava rodando quando o sender caiu.
+
+### Experimento que separa as três (fazer nesta ordem)
+
+**Primeiro, `iperf3`** — nunca foi rodado, e é exatamente o que responde a (1):
+
+```powershell
+iperf3 -c 192.168.0.21 -t 30            # TCP: teto real do caminho
+iperf3 -c 192.168.0.21 -u -b 25M -t 30  # UDP no bitrate-alvo: jitter e perda
+```
+
+**Depois, o sender com buffer grande e bitrate menor** — testa (2) e (1) juntos:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\win-test-video.ps1 -Gpu nvidia -Bitrate 20M
+```
+
+com o SRT em **1 s** de latência dos dois lados (`latency=1000000` no ffmpeg do
+Windows, `latency=1000` no `srt-live-transmit` do Mac — o ffmpeg conta em
+**microssegundos** e o srt-live-transmit em **milissegundos**, pegadinha fácil).
+
+- Se limpar → era (2), e a correção é gratuita: buffer maior no `lanstream`.
+- Se continuar sujo a 20 Mbps → era (1), e aí **a troca do cabo deixa de ser
+  opcional**.
+
+### ⚠️ Isso pode reverter a reclassificação do link de 100 Mbps
+
+O PLANO §5 rebaixou o link de 100 Mbps para risco 🟢 baixo, com o argumento de que
+20–25 Mbps ocupam só ~25% do canal. **Este resultado é a primeira evidência
+contrária.** A reclassificação fica pendente do `iperf3`: se o caminho não
+entregar ~90 Mbps limpos, o argumento cai e o cabo vira pré-requisito.
+
+---
+
 ## 5. Teste 3 — dentro do OBS ⏳ pendente
 
 Media Source apontando para
