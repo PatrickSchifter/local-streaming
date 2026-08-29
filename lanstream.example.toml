@@ -1,0 +1,69 @@
+# lanstream — configuração de exemplo.
+#
+# Copie para `lanstream.toml` na raiz do projeto (ignorado pelo git) ou para
+# ~/.config/lanstream/config.toml. Toda chave é opcional: o que faltar cai no
+# default abaixo. Os valores aqui são os defaults reais, exceto onde marcado.
+#
+# Os números vêm da Fase 0 — ver docs/baseline.md. Não são chute.
+
+[network]
+# IP do Windows (o sender). O Windows escuta em 0.0.0.0, então lá esta chave só
+# serve para o doctor imprimir a URL que o Mac deve usar. No Mac ela é obrigatória
+# para `receive`. Vazio = "descobrir na hora".
+host = ""
+
+# Porta UDP do SRT. Precisa estar liberada no firewall do Windows:
+#   New-NetFirewallRule -DisplayName "lanstream SRT" -Direction Inbound `
+#     -Protocol UDP -LocalPort 9000 -Action Allow -Profile Private
+port = 9000
+
+# Buffer do SRT, em MILISSEGUNDOS. Atenção à pegadinha de unidade (baseline §5):
+#   - ffmpeg e OBS querem MICROssegundos na URL  -> o lanstream multiplica por 1000
+#   - srt-live-transmit quer MILISSEGUNDOS       -> passa direto
+# 1200 ms foi o valor que fechou a Fase 0: 10 min, 508k pacotes, perda zero.
+# O buffer real chegou a 1552 ms num transiente de conexão — daí a folga.
+latency_ms = 1200
+
+[video]
+# O ddagrab captura o que a tela tem. O monitor do Windows é 1920x1080@60,
+# então isto é o teto físico, não uma escolha (PLANO §Fase 7).
+width = 1920
+height = 1080
+fps = 60
+
+# 15 Mbps CBR. Acima disso a rede começa a cobrar (baseline §4/§4e) e abaixo
+# disso a Twitch nem mostraria a diferença (PLANO §3.3).
+bitrate = "15M"
+
+# "hevc" ou "h264". HEVC não é preferência, é requisito: é ele que faz 1080p60
+# caber em 15 Mbps neste caminho de rede.
+codec = "hevc"
+
+# Encoder explícito (ex.: "hevc_nvenc"). Vazio = detecção automática pela cadeia
+# de fallback hevc_nvenc -> h264_nvenc -> hevc_amf -> ... -> libx264 (Fase 2).
+encoder = ""
+
+# Índice do monitor para o ddagrab.
+monitor = 0
+
+# Preset do NVENC. p5 = "slow" na escala nova; validado na Fase 0.
+preset = "p5"
+
+[audio]
+# Fase 3. A máquina do Windows não tem nenhum device de loopback (baseline §2),
+# então isto continua desligado até um VB-CABLE / virtual-audio-capturer existir.
+enabled = false
+
+# Nome do device DirectShow, como aparece em:
+#   ffmpeg -list_devices true -f dshow -i dummy
+device = ""
+
+bitrate = "160k"
+
+[paths]
+# Deixe vazio para procurar no PATH. Preencha só se houver mais de um ffmpeg
+# instalado e você quiser fixar um — no Windows a 9.0.1 quebra o NVENC com o
+# driver 591.74 (baseline §2), então fixar a 8.1 aqui é um uso legítimo.
+ffmpeg = ""
+ffplay = ""
+srt_live_transmit = ""

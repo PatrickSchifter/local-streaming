@@ -162,8 +162,13 @@ local-streaming/
 
 > **Status:** ✅ **Fase 0 concluída** (2026-08-29). Jogo real capturado, 10 min
 > com perda zero, e OBS renderizando a 60 fps sem frame descartado. Config de
-> produção: `hevc_nvenc 15M` + buffer SRT 1.2 s. Próxima: **Fase 1**.
+> produção: `hevc_nvenc 15M` + buffer SRT 1.2 s.
 > Achados e números em [`docs/baseline.md`](docs/baseline.md).
+>
+> 🔨 **Fase 1 escrita e validada no Mac** (2026-08-29). `lanstream doctor` e
+> `lanstream config` rodam; a config valida com erro legível. **Falta a metade do
+> Windows** — o critério de saída exige o diagnóstico correto nos dois SOs, e o
+> comando a rodar lá está em [`docs/proximos-testes.md`](docs/proximos-testes.md).
 
 ## 4. Fases
 
@@ -186,7 +191,7 @@ Se essa fase falhar, a arquitetura muda e nada do resto foi desperdiçado.
 - [x] **Teste 1 — só vídeo, na mão.** No Windows:
       `ffmpeg -f lavfi -i ddagrab=0:framerate=60 -c:v h264_nvenc -preset p5 -tune ll -b:v 30M -f mpegts "srt://0.0.0.0:9000?mode=listener"`
       No Mac: `ffplay "srt://<IP-WIN>:9000?mode=caller"`.
-- [ ] **Teste 2 — dentro do OBS.** Media Source com a mesma URL SRT.
+- [x] **Teste 2 — dentro do OBS.** Media Source com a mesma URL SRT. (`baseline` §5)
 - [x] Medir: throughput real (`iperf3` entre as máquinas), latência ponta-a-ponta
       (cronômetro na tela do Windows filmado pela cena do OBS), estabilidade em 10min.
 - [x] Registrar tudo em `docs/baseline.md` — os números viram a referência de regressão.
@@ -202,20 +207,41 @@ lento) ou rodar OBS no Windows só como capturador. Descobrir isso na Fase 0, n�
 
 ### Fase 1 — Esqueleto do projeto
 
-- [ ] `git init`, `pyproject.toml`, `src/lanstream/`, ruff + formatação.
-- [ ] `lanstream.example.toml` com todas as chaves comentadas
-      (`[network] host/port/latency_ms`, `[video] width/height/fps/bitrate/codec/encoder`,
-      `[audio] device/bitrate`, `[paths] ffmpeg`).
-- [ ] `config.py`: carrega `./lanstream.toml` → `~/.config/lanstream/config.toml`
-      → defaults; valida e dá erro legível (não stack trace) quando falta chave.
-- [ ] `ffmpeg.py`: localizar binário (config > `PATH` > locais conhecidos), rodar
-      `-version`, extrair versão e lista de encoders.
-- [ ] `lanstream doctor`: imprime SO, versão do ffmpeg, encoders de hardware
-      disponíveis, IPs locais, e se a porta está livre/alcançável. Funciona nos dois SOs.
-      No Mac deve checar `srt-live-transmit` (e não o protocolo `srt` do ffmpeg,
-      que não existe lá). Portar a lógica de `scripts/win-doctor.ps1`.
+- [x] `git init`, `pyproject.toml`, `src/lanstream/`, ruff + formatação.
+      Instalação: `uv venv && uv pip install -e ".[dev]"`. `ruff check src/` limpo.
+- [x] `lanstream.example.toml` com todas as chaves comentadas. Os valores do
+      arquivo são exatamente os defaults do código — verificado com
+      `lanstream config show -c lanstream.example.toml`, que devolve o mesmo TOML.
+      Cada número traz a referência do `baseline` que o justifica.
+- [x] `config.py`: carrega `--config` → `./lanstream.toml` →
+      `~/.config/lanstream/config.toml` → defaults (a primeira que existir vence;
+      não há merge). Chave desconhecida sugere a parecida, tipo errado e faixa
+      inválida têm mensagem própria, e nada disso sai como stack trace — sai como
+      uma linha e código 2.
+      A conversão de unidade do `latency` mora só aqui (`url_for_ffmpeg` em µs,
+      `url_for_srt_live_transmit` em ms), que é a pegadinha de três variantes do
+      `baseline` §5.
+- [x] `ffmpeg.py`: localiza o binário (config > `PATH` > locais conhecidos — o
+      instalador do Windows não atualiza o PATH da sessão aberta), extrai versão e
+      build, e consulta encoders/filtros/protocolos sob demanda. Guarda a cadeia de
+      fallback da Fase 2 e avisa sobre a incompatibilidade ffmpeg 9.x × driver
+      591.74 (`baseline` §2).
+- [x] `lanstream doctor`: SO e papel, config em uso, ffmpeg, encoders de hardware,
+      `ddagrab` e protocolo SRT (Windows), `srt-live-transmit` e `ffplay` (Mac),
+      regra de firewall, IPs locais, porta 9000/UDP livre, alcance até o sender, e
+      as três URLs já com a unidade certa. Sai 1 se houver FALHA.
+      Portou `scripts/win-doctor.ps1` e **corrigiu um falso negativo dele**: o
+      alcance não é testado por `ping` — o Firewall do Windows dropa ICMP echo e a
+      máquina online aparecia como morta (`baseline` §4). A prova de vida é o ARP
+      resolver o MAC.
+- [ ] **Rodar o `doctor` no Windows.** Só o lado do Mac foi verificado.
 
 **Saída:** `lanstream doctor` roda no Mac e no Windows e mostra um diagnóstico correto.
+
+> **Onde está:** ✅ Mac — diagnóstico correto, inclusive reconhecendo que a
+> ausência de SRT no ffmpeg do Homebrew é o esperado e não um defeito.
+> ⏳ Windows — o código dos dois SOs foi executado (forçando o ramo), mas num
+> ffmpeg de Mac: prova que não quebra, não que acerta. Falta a rodada real.
 
 ---
 

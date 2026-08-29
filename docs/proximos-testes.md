@@ -3,6 +3,9 @@
 Ordem de prioridade. Cada teste diz o comando exato, o que eu faço do lado do Mac,
 e **o que o resultado decide** — nenhum teste aqui é "por garantia".
 
+O **F1** é da Fase 1 e é o único bloqueante hoje. Os T1–T6 são resquícios da
+Fase 0: ela fechou sem eles, e cada um diz no título se ainda vale a pena.
+
 Contexto: `docs/baseline.md` §4e. O caminho Windows→Mac entrega ~17 Mbps limpos, o
 buffer alto troca corrupção por queda de framerate, e falta achar a configuração
 que roda a 60 fps dentro desse teto.
@@ -35,6 +38,43 @@ que roda a 60 fps dentro desse teto.
 7. **Tela em movimento durante a medição.** Com o desktop parado o `hevc_nvenc` em
    CBR entrega ~1.7 Mbps e a rede nunca é estressada — `-b:v` é teto, não piso.
    Rodada com tela parada não mede nada e o `0 drops` dela é falso positivo (§4f).
+
+---
+
+## F1 — `lanstream doctor` no Windows 🔵 **é o que falta para fechar a Fase 1**
+
+Não mede rede nem qualidade: mede se o diagnóstico automático concorda com o que a
+Fase 0 descobriu na mão. É rápido (segundos) e não precisa de mim do outro lado.
+
+```powershell
+git pull
+winget install --id=astral-sh.uv -e     # só na primeira vez
+uv venv
+uv pip install -e ".[dev]"
+.venv\Scripts\lanstream doctor
+```
+
+Cole a saída inteira. O que ela **precisa** dizer, porque a Fase 0 já provou cada
+item pelo caminho difícil:
+
+| Linha | Esperado | Se vier diferente |
+|---|---|---|
+| `ffmpeg` | **8.1** | Se aparecer 9.x, o `winget upgrade` reintroduziu o bug de NVENC do `baseline` §2 — o próprio doctor avisa |
+| `encoders de hardware` | inclui `hevc_nvenc` | build errado do ffmpeg |
+| `encoder escolhido` | `hevc_nvenc` | a cadeia de fallback caiu — HEVC é requisito (§3.3 do PLANO) |
+| `ddagrab` | presente | build `essentials` em vez do `full` |
+| `protocolo SRT no ffmpeg` | presente | idem |
+| `firewall` | regra "lanstream SRT" existe | a regra foi criada na Fase 0; se sumiu, o comando está na própria mensagem |
+| `porta 9000/UDP` | livre | ffmpeg órfão de uma rodada anterior segurando a porta (§4e) |
+| `IPs locais` | inclui **192.168.0.12** | o IP mudou — atualize `[network] host` do meu lado |
+| `alcance até ...` | precisa de `[network] host` preenchido | crie um `lanstream.toml` com `host = "192.168.0.21"` (o Mac) para exercitar essa linha |
+
+O código sai **1** se houver FALHA e **0** caso contrário, então dá para usar como
+preflight antes de subir o sender na Fase 2.
+
+> ⚠️ O `doctor` **não** abre conexão SRT nem toca na porta além de um bind de teste
+> instantâneo. Pode rodar com o sender no ar sem derrubar nada — ao contrário do
+> `srt-live-transmit`, que consome a única conexão que o sender aceita (§4e).
 
 ---
 
