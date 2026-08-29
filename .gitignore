@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+lanstream.toml
+logs/
+*.log
+.DS_Store
