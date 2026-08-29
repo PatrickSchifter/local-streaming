@@ -932,6 +932,84 @@ continua condicionado a um freio medido *com bitrate real no caminho*.
 
 ---
 
+## 4g. ✅ T3 — jogo real capturado. O risco existencial do projeto acabou
+
+Data: 2026-08-29. Resident Evil rodando no Windows, sender em
+`hevc_nvenc -Bitrate 15M -LatencyMs 1200`, receptor no Mac por ~3 minutos.
+
+### 🎯 O `ddagrab` captura o jogo
+
+![frame recebido no Mac](img/t3-jogo-recebido.jpg)
+
+Frame extraído do stream **na chegada, no Mac**. Imagem limpa, sem corrupção, sem
+tela preta. Este era o risco marcado como "o único que ainda pode derrubar a
+arquitetura" desde o §2 — **está eliminado**. O Plano B (§6 do PLANO) sai da mesa.
+
+### Rede sob carga real — 155 mil pacotes, perda zero
+
+| Métrica | Valor |
+|---|---|
+| Duração | **178 s** (~3 min contínuos) |
+| Pacotes recebidos | **155.443** |
+| `packetsLost` / `packetsDropped` / `packetsRetransmitted` / `packetsBelated` | **0 / 0 / 0 / 0** |
+| `RCV-DROPPED` | **0** |
+| Erros de decode / `concealing` | **0** |
+| Bitrate | min **4.53** · média **9.59** · pico **15.12** Mbps |
+| RTT | 1.94 – 4.72 ms (estável) |
+| `msBuf` | **1185–1213 ms** ao longo de 77 amostras |
+
+**Agora sim é um resultado.** Diferente do T1 (§4f), aqui houve bitrate real: média
+de 9.6 Mbps com picos de 15.1 encostando no teto de `-b:v 15M`. O achado 1 do §4f
+— "desktop parado não gera bitrate" — está resolvido: **jogo gera**.
+
+O sinal mais forte não é o zero de perda, é a **estabilidade do `msBuf`**. Ele
+ficou entre 1185 e 1213 ms durante 77 amostras seguidas, sem tendência de
+crescimento. Buffer que não cresce = fila que não se acumula = **sem
+contrapressão**. É o oposto exato do §4b, onde a fila estava travada em ~900 ms.
+
+E `packetsRetransmitted: 0` em 155 mil pacotes significa que o ARQ da SRT **nunca
+precisou entrar em ação** — a rede não perdeu um pacote sequer em 3 minutos.
+
+### ⚠️ O fps de chegada NÃO foi medido — o confounder é meu
+
+O ffmpeg do receptor rodou a **`fps=13`, `speed=0.256x`**. Não é a rede: eu pedi
+duas saídas na mesma corrida (o `-f null` das estatísticas **mais** encode MJPEG
+para extrair os frames), e o pipeline de medição ficou abaixo do tempo real.
+
+**Consequência:** o `fps` do meu lado não pode ser lido como framerate entregue, e
+**o framerate de chegada continua sem medição válida**. Quem tem o número é o
+sender. Registrado para não repetir o erro do §4f, onde uma métrica do observador
+foi confundida com propriedade do sistema.
+
+> Corrigir na próxima: extrair frames numa corrida separada, nunca junto da
+> medição de desempenho.
+
+### Observação: o jogo é 4:3, com ~40% do quadro em barra preta
+
+O Resident Evil renderiza em 4:3 e o `ddagrab` captura o desktop inteiro em
+1920x1080, então o stream carrega barras pretas laterais. Não é problema de
+correção — preto comprime quase de graça, e o bitrate medido já reflete isso.
+
+Para a Fase 4 fica a nota: **cortar na cena do OBS**, não no sender. Cortar no
+sender economizaria pouco (o preto já custa pouco) e amarraria o sender a um jogo
+específico.
+
+### Ressalva de generalização
+
+Resident Evil clássico é um jogo leve e antigo. Média de 9.6 Mbps com picos no teto
+é carga real, mas **um jogo moderno sustentaria mais** e pode encostar no teto de
+~17 Mbps do §4e. O resultado vale como prova de conceito, não como envelope máximo.
+
+### O que fica decidido
+
+- **`ddagrab` + fullscreen: funciona.** Risco existencial encerrado.
+- **A rede aguenta o caso real testado.** 3 min, 155k pacotes, zero perda.
+- **`hevc_nvenc 15M / buffer 1200 ms` é a configuração de produção candidata.**
+- Falta: **framerate de chegada** (pelo sender) e o **T4** — do qual estes 3 min já
+  são quase um terço.
+
+---
+
 ## 5. Teste 3 — dentro do OBS ⏳ pendente
 
 Media Source apontando para
