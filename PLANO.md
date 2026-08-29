@@ -160,11 +160,13 @@ local-streaming/
 
 ---
 
-> **Status:** Fase 0 essencialmente fechada. Testes 1 e 2 executados com as duas
-> máquinas. O vídeo chega no Mac. **Mas a rede virou o maior risco do projeto:** o
-> teto utilizável medido é ~16 Mbps. O §3.3 já foi revisto duas vezes por causa
-> disso e hoje adota 15 Mbps HEVC.
-> Falta o teste com jogo real em fullscreen exclusivo.
+> **Status:** Fase 0 quase fechada. O SRT conecta e o vídeo chega no Mac, mas
+> chega degradado (~29 fps, macroblocos) porque os pacotes atrasam 850–975 ms
+> contra um buffer SRT de 120 ms. O `iperf3` isolou o culpado: **o caminho é
+> assimétrico** — Mac→Windows faz 93.5 Mbps limpos, Windows→Mac não. O gargalo é o
+> downlink do roteador para o Mac, não o cabo do Windows.
+> **Próximo experimento, o que decide:** repetir com buffer SRT de 1.2 s.
+> Falta também o teste com jogo real em fullscreen exclusivo.
 > Achados e números em [`docs/baseline.md`](docs/baseline.md).
 
 ## 4. Fases
@@ -358,8 +360,9 @@ intervenção nas duas máquinas.
 |---|---|---|
 | `ddagrab` não captura o jogo (fullscreen exclusivo / anti-cheat) | 🟡 Médio | **Fase 0: captura do desktop validada** (58 fps, speed 0.98x, tudo na GPU). Restou só o caso do fullscreen exclusivo. Testar com os jogos reais. Fallback: forçar borderless windowed, ou usar OBS no Windows como capturador enviando SRT. |
 | Áudio loopback no Windows exige software de terceiro | 🔴 Confirmado | **Fase 0:** não existe nenhum device de loopback na máquina (`Win32_SoundDevice` só lista Realtek + NVIDIA HDMI). A Fase 3 começa do zero e exige instalar driver + reboot. |
-| **A rede não sustentar o bitrate** | 🔴 Alto | **Medido na Fase 0, é o maior risco atual.** Não é o link de 100 Mbps: a vazão real é **48.7 Mbps de TCP** e o UDP perde pacote acima de **16 Mbps** (1.6% a 20, 4.4% a 25). O alvo de 20–25 Mbps do §3.3 não cabe; foi revisto pra 15 Mbps HEVC. Jitter passa folgado (<0.6 ms), o problema é perda. |
-| **Link Ethernet do Windows a 100 Mbps** | 🟡 Médio | **Fase 0:** o I219-V é gigabit mas negociou 100M (cabo ou porta). ~~Com o alvo de 20–25 Mbps seria ~25% do canal, então trocar o cabo era melhoria e não pré-requisito.~~ **A medição desmentiu:** a vazão real é metade do que o próprio link de 100M daria, então há um segundo gargalo — provavelmente o Wi-Fi do Mac ou o roteador. Trocar o cabo volta a valer, e junto vale testar o **Mac no cabo** (adaptador USB-C) pra isolar o Wi-Fi. |
+| **Caminho assimétrico: downlink roteador→Mac** | 🔴 Alto | **É o gargalo real (`baseline` §4c).** Mac→Windows faz 93.5 Mbps TCP e 60 Mbps UDP com 0% perda; Windows→Mac faz 68 Mbps TCP e perde 5.5% a 25 Mbps. A única perna não compartilhada é o downlink do AP. Correção provável: **Mac no cabo** (adaptador USB-C) — não o cabo do Windows, que já provou carregar 93.5 Mbps. |
+| **A rede não sustentar o bitrate** | 🟡 Médio | **Rebaixado.** O teto de 16 Mbps do `baseline` §4 era artefato da rajada não pacejada do `iperf3 -u`: no mesmo caminho o TCP faz 68 Mbps. A SRT se pacea e tem ARQ. Alvo segue em 15 Mbps até o experimento de buffer de 1.2 s dizer se dá pra subir. |
+| **Link Ethernet do Windows a 100 Mbps** | 🟢 Baixo | **Praticamente inocentado (`baseline` §4c).** O link negocia 100M, mas **entrega 93.5 Mbps de TCP no sentido de entrada** e a placa não acusa um único erro ou descarte de saída. Não é ele que limita o stream. Trocar o cabo continua sendo melhoria (subiria pra 1 Gbps), não correção. |
 | **`ddagrab` entrega ~57 fps, não 60** | 🟡 Médio | **Fase 0.** Gargalo é a captura, não o encoder (fonte sintética faz 270 fps). Pode ser artefato da Desktop Duplication com tela quase parada — ela só entrega frame quando há mudança. Remedir com jogo real antes de tratar como problema. |
 | Media Source do OBS instável com SRT longo prazo | Médio | `receive --preview` isola a causa; plano B é ffmpeg→NDI (DistroAV) no Mac. |
 | **MacBook Air M4 é fanless** | 🟡 Médio | **Novo (Fase 0).** Live longa = decode + reencode + composição sem ventoinha. Medir throttling com `powermetrics` na Fase 4; se ocorrer, baixar resolução de saída ou o preset do encoder. |

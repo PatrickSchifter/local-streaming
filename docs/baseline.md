@@ -412,6 +412,12 @@ nítido: some completamente até 16 Mbps e cresce rápido depois.
 
 ### 🔴 O que isso significa pro projeto
 
+> ⚠️ **Leia o §4c antes de agir por esta seção.** As conclusões abaixo foram
+> escritas com o EEE da placa ainda ligado e sem testar o sentido inverso.
+> Depois disso o TCP subiu para 68 Mbps e ficou provado que o caminho é
+> assimétrico — o "teto de 16 Mbps" é artefato da rajada não pacejada do
+> `iperf3 -u`, não um limite real para a SRT.
+
 **O teto utilizável é 16 Mbps.** O §3.3 do plano tinha acabado de ser revisto para
 20–25 Mbps HEVC — e mesmo esse alvo, já bem mais modesto que os 30–60 originais,
 **não cabe**: a 20 Mbps a rede perde 1.6% e a 25 Mbps perde 4.4%.
@@ -542,6 +548,112 @@ entregar ~90 Mbps limpos, o argumento cai e o cabo vira pré-requisito.
 
 ---
 
+## 4c. ✅ Respondendo o §4b — o caminho é assimétrico
+
+O §4b levantou três hipóteses e pediu o `iperf3` para separá-las. Rodado. Também
+foram testadas duas hipóteses de causa que apareceram no caminho.
+
+### ❌ Hipótese descartada: uTorrent consumindo o upload
+
+Havia um uTorrent enviando a ~5 MB/s (**40 Mbps**) durante a primeira medição.
+Somados aos 48.7 Mbps medidos, dá ~89 Mbps — suspeitosamente perto do teto de um
+link de 100 Mbps, então a explicação parecia perfeita.
+
+**Não era.** Com o uTorrent fechado, o perfil de perda ficou igual: 20 Mbps passou
+de 1.6% para 1.5%, 25 Mbps de 4.4% para 4.7%. Dentro do ruído. O TCP até caiu
+(37.4 Mbps numa corrida). Hipótese testada e rejeitada — vale registrar para
+ninguém reinvestigar.
+
+### ✅ Causa parcial encontrada: Energy Efficient Ethernet
+
+A placa do Windows estava com **EEE ligado** (`EEELinkAdvertisement`). Desligado
+com:
+
+```powershell
+Set-NetAdapterAdvancedProperty -Name Ethernet `
+  -DisplayName "Ethernet com uso eficiente de energia" -DisplayValue "Desligado"
+Restart-NetAdapter -Name Ethernet
+```
+
+| TCP Windows→Mac | Antes (EEE on) | Depois (EEE off) |
+|---|---|---|
+| 3 corridas de 15 s | 46.1 / 56.6 / 42.4 Mbps | **66.0 / 68.9 / 68.2 Mbps** |
+
+**Ganho de ~40% e, mais importante, a variância sumiu** — as amostras não se
+sobrepõem. Ficou permanente na placa.
+
+> O link **continuou negociando 100 Mbps** depois do EEE off, então o EEE não era a
+> causa da negociação em 100M. São dois problemas diferentes.
+
+### 🔴 O achado principal: o caminho é fortemente assimétrico
+
+| Direção | TCP | UDP 25M | UDP 60M |
+|---|---|---|---|
+| **Windows → Mac** (o do stream) | 68 Mbps | 5.5% perda | — |
+| **Mac → Windows** | **93.5 Mbps** | **0% perda** | **0% perda** |
+
+O sentido Mac→Windows satura o link de 100 Mbps e entrega **60 Mbps de UDP sem
+perder um pacote**. O sentido do stream, não.
+
+**Isso inocenta boa parte do que estava sob suspeita.** O cabo do Windows carrega
+93.5 Mbps de entrada; a placa não acusa nenhum `OutboundPacketError` nem
+`OutboundDiscardedPacket`. O Wi-Fi do Mac transmite 60 Mbps limpos. O que sobra é
+a perna **roteador → Mac** (downlink do AP), que é justamente a única que os dois
+testes não compartilham.
+
+### Pista adicional: pacote menor, mais perda
+
+No mesmo bitrate, reduzir o payload piora:
+
+| Payload | 20 Mbps | 25 Mbps |
+|---|---|---|
+| ~1450 B (padrão) | 3.3% | 5.5% |
+| 1400 B | 4.2% | 6.0% |
+| 1200 B | **7.8%** | **7.8%** |
+
+Mesma banda, mais pacotes, mais perda. A assinatura é de **limite de taxa de
+pacotes / contenção de airtime**, não de falta de largura de banda.
+
+### ⚠️ O "teto de 16 Mbps" do §4 era pessimista demais
+
+O §4 concluiu que o teto utilizável eram 16 Mbps. **Isso superestima o problema**,
+por um motivo metodológico: o `iperf3` em UDP dispara rajadas não pacejadas na taxa
+alvo. O TCP, que se auto-pacea, alcança 68 Mbps no mesmo caminho — 4x o suposto
+teto. Um transporte que espaça os pacotes vê um caminho muito melhor do que o
+`iperf3 -u` sugere.
+
+**A SRT se pacea e tem ARQ**, e foi desenhada exatamente para links com alguns por
+cento de perda. Então os números de perda acima **não se traduzem direto** em
+qualidade de stream. O que decide não é o `iperf3` — são as estatísticas da própria
+SRT em stream real.
+
+### Como isso responde às três hipóteses do §4b
+
+| Hipótese do §4b | Veredito |
+|---|---|
+| **(1) Oversubscription do caminho** | 🟡 **Parcial.** A 30 Mbps o sender pede mais do que o downlink entrega com folga, então há fila. Mas o caminho não é tão estreito quanto parecia: 68 Mbps de TCP. |
+| **(2) Buffer do SRT pequeno demais** | 🟢 **Principal suspeita agora.** O §4b mediu atraso **estável em 850–975 ms** — fila profunda mas *limitada*, não crescente. Com buffer de 120 ms, tudo isso vira `RCV-DROPPED` por definição. Subir para 1.2 s deve limpar, e pelo §3.1 do PLANO isso é de graça. |
+| **(3) Contrapressão no Mac** | ⚪ **Continua aberta** — nada medido daqui responde. |
+
+### Próximo experimento (é o que decide)
+
+Exatamente o que o §4b propôs, agora com o `iperf3` já feito:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\win-test-video.ps1 -Gpu nvidia -Bitrate 20M
+```
+
+com **latência SRT de 1.2 s dos dois lados** — `latency=1200000` no ffmpeg
+(microssegundos) e `latency=1200` no `srt-live-transmit` (milissegundos).
+
+- Se limpar → era (2). Correção gratuita: buffer maior no `lanstream`, e o alvo de
+  bitrate pode voltar a subir.
+- Se continuar sujo → o gargalo é mesmo o downlink do AP, e aí o caminho é **pôr o
+  Mac no cabo** (adaptador USB-C), não trocar o cabo do Windows — que já provou
+  carregar 93.5 Mbps.
+
+---
+
 ## 5. Teste 3 — dentro do OBS ⏳ pendente
 
 Media Source apontando para
@@ -560,7 +672,9 @@ Windows, então latência alta só afeta o sync com o microfone (§3.1 do PLANO)
 
 | Risco | Status |
 |---|---|
-| **A rede não sustentar o bitrate** | 🔴 **Virou o maior risco do projeto.** Medido no §4: 48.7 Mbps de TCP e perda de pacote em UDP acima de 16 Mbps. Derrubou tanto o alvo original de 30–60 Mbps quanto a revisão para 20–25; o §3.3 hoje adota **15 Mbps HEVC**. O jitter, esse sim, passa folgado (< 0.6 ms). |
+| **A rede não sustentar o bitrate** | 🟡 **Menos grave do que o §4 concluiu, ver §4c.** Com o EEE desligado o TCP faz **68 Mbps** no sentido do stream. O "teto de 16 Mbps" era artefato da rajada do `iperf3 -u`; a SRT se pacea e tem ARQ. Pendente do experimento de buffer de 1.2 s. |
+| **Caminho assimétrico (downlink do AP)** | 🔴 **Novo, e é o gargalo real.** Mac→Windows faz 93.5 Mbps de TCP e 60 Mbps de UDP com 0% de perda; Windows→Mac faz 68 Mbps de TCP e perde 5.5% de UDP a 25 Mbps. A única perna não compartilhada é **roteador → Mac**. Payload menor piora a perda, o que aponta para contenção de airtime. |
+| **EEE ligado na placa do Windows** | 🟢 **Resolvido.** `EEELinkAdvertisement` desligado: TCP passou de 42–57 para 66–69 Mbps e a variância sumiu. Não afetou a negociação em 100M, que é problema separado. |
 | **Ethernet do Windows a 100 Mbps** | 🟡 **Real, mas não explica tudo.** O I219-V é gigabit e negociou 100 Mbps. Só que a vazão medida foi 48.7 Mbps — metade do que o próprio link de 100 Mbps daria. Há um segundo gargalo no caminho, provavelmente o Wi-Fi do Mac ou o roteador. |
 | **UDP degrada muito antes do TCP** | 🟡 **Novo e contraintuitivo.** TCP sustenta 48.7 Mbps mas UDP já perde pacote a 17 Mbps. O esperado seria o oposto. Aponta para fila/buffer no caminho (provável AP), não para falta de banda. Como SRT é UDP, é o número de 16 Mbps que vale. |
 | **HEVC deixou de ser opcional** | 🟡 **Novo.** Com teto de 16 Mbps, 1080p60 em H.264 fica apertado. O `hevc_nvenc` já está validado e a 15 Mbps rende aproximadamente o que o H.264 renderia a 25. Vira dependência da Fase 2, não melhoria da Fase 7. |
