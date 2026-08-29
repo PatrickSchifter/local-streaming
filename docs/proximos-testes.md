@@ -65,7 +65,7 @@ item pelo caminho difícil:
 | `ddagrab` | presente | build `essentials` em vez do `full` |
 | `protocolo SRT no ffmpeg` | presente | idem |
 | `firewall` | regra "lanstream SRT" existe | a regra foi criada na Fase 0; se sumiu, o comando está na própria mensagem |
-| `porta 9000/UDP` | livre | ffmpeg órfão de uma rodada anterior segurando a porta (§4e) |
+| `porta 9000/UDP` | livre | sai como **AVISO**, não falha: com o sender no ar a porta está ocupada e isso é o esperado. Sem sender, é ffmpeg órfão segurando a porta (§4e) |
 | `IPs locais` | inclui **192.168.0.12** | o IP mudou — atualize `[network] host` do meu lado |
 | `alcance até ...` | precisa de `[network] host` preenchido | crie um `lanstream.toml` com `host = "192.168.0.21"` (o Mac) para exercitar essa linha |
 

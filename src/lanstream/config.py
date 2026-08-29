@@ -79,7 +79,7 @@ class VideoConfig:
     width: int = 1920
     height: int = 1080
     fps: int = 60
-    bitrate: str = "15M"
+    bitrate: str | int = "15M"
     codec: str = "hevc"
     encoder: str = ""
     monitor: int = 0
@@ -109,7 +109,7 @@ class VideoConfig:
 class AudioConfig:
     enabled: bool = False
     device: str = ""
-    bitrate: str = "160k"
+    bitrate: str | int = "160k"
 
     def validate(self) -> None:
         parse_bitrate(self.bitrate, "[audio] bitrate")
@@ -167,13 +167,22 @@ SECTIONS: dict[str, type] = {
 # --------------------------------------------------------------------------- #
 
 
-def parse_bitrate(value: str, where: str) -> int:
+def parse_bitrate(value: str | int, where: str) -> int:
     """ "15M" -> 15_000_000. Aceita o mesmo sufixo que o ffmpeg (K/M, sem case)."""
+    # `bool` é subclasse de `int`: sem esta linha, bitrate = true viraria 1 bit/s.
+    if isinstance(value, bool):
+        raise ConfigError(
+            f'{where} = {str(value).lower()} — esperado algo como "15M", não true/false'
+        )
     if isinstance(value, int):
+        if value <= 0:
+            raise ConfigError(f"{where} = {value} — precisa ser positivo")
         return value
-    if not isinstance(value, str) or not value:
+    if not isinstance(value, str):
         raise ConfigError(f'{where} = {value!r} — esperado algo como "15M" ou "160k"')
     text = value.strip()
+    if not text:
+        raise ConfigError(f'{where} está vazio — esperado algo como "15M" ou "160k"')
     multiplier = 1
     if text[-1] in "kK":
         multiplier, text = 1_000, text[:-1]
@@ -212,6 +221,11 @@ def _build_section(name: str, cls: type, raw: Any, path: Path) -> Any:
                 f"  Chaves válidas: {', '.join(known)}"
             )
         expected = known[key].type
+        if expected == "str | int":
+            # Só o bitrate: "15M" e 15000000 são ambos válidos, e quem valida o
+            # conteúdo é o parse_bitrate, com mensagem melhor do que a daqui.
+            kwargs[key] = value
+            continue
         # `bool` é subclasse de `int` em Python; sem esta checagem, port = true passaria.
         if expected == "int" and (not isinstance(value, int) or isinstance(value, bool)):
             raise ConfigError(f"{path}: [{name}] {key} = {value!r} — esperado um número inteiro")

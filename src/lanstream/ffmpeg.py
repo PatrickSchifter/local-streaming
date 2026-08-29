@@ -54,6 +54,52 @@ ENCODER_CHAIN: tuple[str, ...] = (
     "libx264",
 )
 
+# Qual encoder entrega qual codec. Não dá para deduzir do nome: `libx265` é HEVC
+# e não começa com "hevc", e concluir o contrário faria o doctor dizer que o
+# codec pedido não foi atendido quando foi.
+CODEC_FAMILIES: dict[str, tuple[str, ...]] = {
+    "hevc": ("hevc_nvenc", "hevc_amf", "hevc_qsv", "hevc_videotoolbox", "libx265"),
+    "h264": ("h264_nvenc", "h264_amf", "h264_qsv", "h264_videotoolbox", "libx264"),
+}
+
+
+def codec_of(encoder: str) -> str | None:
+    """Codec que este encoder produz, ou None se for um nome desconhecido."""
+    return next((codec for codec, names in CODEC_FAMILIES.items() if encoder in names), None)
+
+
+def _parse_listing(output: str) -> set[str]:
+    """Nomes de uma listagem `-encoders` / `-filters`.
+
+    O formato é: legenda das flags, uma linha `------`, e só então as linhas de
+    verdade (`V....D h264_nvenc  NVIDIA...`, ` .. scale  V->V  ...`). Cortar na
+    separação é o que sobrevive à largura do campo de flags mudar — no ffmpeg 8.x
+    o `-filters` imprime 2 caracteres onde o `-encoders` imprime 6, e uma regex de
+    largura fixa erra em silêncio: a versão anterior deste código casava só com a
+    linha da legenda e concluía que o `ddagrab` não existia.
+    """
+    parts = re.split(r"^\s*-{3,}\s*$", output, maxsplit=1, flags=re.MULTILINE)
+    body = (
+        parts[1]
+        if len(parts) > 1
+        else "\n".join(
+            # Build sem separador: a legenda é o que tem "=", as entradas não têm.
+            line
+            for line in output.splitlines()
+            if "=" not in line
+        )
+    )
+    names = set()
+    for line in body.splitlines():
+        # Toda entrada é indentada; cabeçalhos ("Encoders:") não são.
+        if line[:1].strip():
+            continue
+        fields = line.split()
+        if len(fields) >= 2:
+            names.add(fields[1])
+    return names
+
+
 _HW_ENCODER_RE = re.compile(r"nvenc|_amf|_qsv|videotoolbox")
 
 
@@ -106,29 +152,31 @@ class FFmpegInfo:
 
     @functools.cached_property
     def encoders(self) -> set[str]:
-        # Formato: " V....D h264_nvenc           NVIDIA NVENC H.264 encoder"
-        return {
-            m.group(1)
-            for line in _run(self.path, "-encoders").splitlines()
-            if (m := re.match(r"^\s*[VAS][\w.]{5}\s+(\S+)", line))
-        }
+        return _parse_listing(_run(self.path, "-encoders"))
 
     @functools.cached_property
     def filters(self) -> set[str]:
-        return {
-            m.group(1)
-            for line in _run(self.path, "-filters").splitlines()
-            if (m := re.match(r"^\s*[TSC.]{3}\s+(\S+)", line))
-        }
+        return _parse_listing(_run(self.path, "-filters"))
 
     @functools.cached_property
     def protocols(self) -> set[str]:
-        return {line.strip() for line in _run(self.path, "-protocols").splitlines() if line.strip()}
+        # "Supported file protocols:" / "Input:" / "  file" / "Output:" / ...
+        return {
+            line.strip()
+            for line in _run(self.path, "-protocols").splitlines()
+            if line.strip() and not line.rstrip().endswith(":")
+        }
 
     @property
     def version_tuple(self) -> tuple[int, ...]:
-        """(9, 0, 1) a partir de "9.0.1". Vazio quando é build de git sem versão."""
-        return tuple(int(p) for p in re.findall(r"\d+", self.version)[:3])
+        """(9, 0, 1) a partir de "9.0.1".
+
+        Vazio quando não é uma versão numerada — os builds de git do gyan.dev se
+        chamam `2026-01-01-git-abcdef`, e ler "2026" como número de versão faria
+        qualquer comparação de "é mais novo que" mentir.
+        """
+        match = re.fullmatch(r"(\d+)\.(\d+)(?:\.(\d+))?", self.version)
+        return tuple(int(g) for g in match.groups() if g) if match else ()
 
     def hardware_encoders(self) -> list[str]:
         return sorted(e for e in self.encoders if _HW_ENCODER_RE.search(e))
@@ -142,7 +190,7 @@ class FFmpegInfo:
                     f"  Disponíveis por hardware: {', '.join(self.hardware_encoders()) or 'nenhum'}"
                 )
             return override
-        preferred = [e for e in ENCODER_CHAIN if e.startswith(codec)]
+        preferred = [e for e in ENCODER_CHAIN if e in CODEC_FAMILIES.get(codec, ())]
         for candidate in preferred + [e for e in ENCODER_CHAIN if e not in preferred]:
             if candidate in self.encoders:
                 return candidate
@@ -157,8 +205,11 @@ def probe(binary: Path) -> FFmpegInfo:
     if not match:
         raise FFmpegError(f"{binary} não parece ser o ffmpeg — respondeu: {first[:80]!r}")
     raw = match.group(1)
-    # "8.1-full_build-www.gyan.dev" -> versão "8.1", build "full_build-www.gyan.dev"
-    version, _, build = raw.partition("-")
+    # "8.1-full_build-www.gyan.dev" -> versão "8.1", build "full_build-www.gyan.dev".
+    # Um build de git ("2026-01-01-git-abcdef") não tem versão: fica inteiro no
+    # campo, e `version_tuple` devolve vazio para quem for comparar.
+    semver = re.match(r"^(\d+\.\d+(?:\.\d+)?)-?(.*)$", raw)
+    version, build = semver.groups() if semver else (raw, "")
     return FFmpegInfo(path=binary, version=version, build=build)
 
 

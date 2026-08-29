@@ -18,6 +18,7 @@ from . import __version__
 from . import doctor as doctor_mod
 from .config import Config, ConfigError, find_config_file
 from .config import load as load_config
+from .ffmpeg import FFmpegError
 
 app = typer.Typer(
     add_completion=False,
@@ -40,6 +41,19 @@ def _load(path: Path | None) -> Config:
         raise typer.Exit(2) from None
 
 
+def _guard(fn, *args):
+    """Rede de segurança: erro conhecido vira uma linha, nunca um traceback.
+
+    O doctor já trata o que consegue tratar; isto pega o que escapar de um
+    caminho novo, para que a promessa da Fase 1 não dependa de disciplina.
+    """
+    try:
+        return fn(*args)
+    except (ConfigError, FFmpegError) as exc:
+        typer.secho(f"erro: {exc}", fg="red", err=True)
+        raise typer.Exit(2) from None
+
+
 @app.callback(invoke_without_command=True)
 def _root(
     ctx: typer.Context,
@@ -56,7 +70,7 @@ def _root(
 @app.command()
 def doctor(config: ConfigOption = None) -> None:
     """Diagnostica este lado: ffmpeg, encoders, captura, SRT, rede e firewall."""
-    sys.exit(doctor_mod.run(_load(config)))
+    sys.exit(_guard(doctor_mod.run, _load(config)))
 
 
 @config_app.command("show")

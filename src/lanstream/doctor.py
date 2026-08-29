@@ -152,6 +152,24 @@ def reachable(host: str) -> tuple[bool, str]:
 # --------------------------------------------------------------------------- #
 
 
+def _ask(report: Report, label: str, query):
+    """Consulta o ffmpeg; devolve None (e registra FALHA) se ele não responder.
+
+    Cada uma destas propriedades abre um subprocesso novo. Um `ffmpeg -encoders`
+    que trava é justamente o sintoma que o doctor existe para diagnosticar
+    (driver x versão, baseline §2) — ele não pode ser a coisa que derruba o doctor.
+    Quem chama precisa parar em None: seguir com uma resposta vazia produziria um
+    segundo diagnóstico, e ele seria falso ("build errado" quando o build está bom).
+    """
+    try:
+        return query()
+    except ff.FFmpegError as exc:
+        report.add(
+            Level.FAIL, label, str(exc).splitlines()[0], "O ffmpeg não respondeu à consulta."
+        )
+        return None
+
+
 def check_ffmpeg(report: Report, cfg: Config) -> ff.FFmpegInfo | None:
     try:
         info = ff.load(cfg.paths.ffmpeg)
@@ -174,7 +192,9 @@ def check_ffmpeg(report: Report, cfg: Config) -> ff.FFmpegInfo | None:
             '"Cannot load nvEncodeAPI64.dll" ou "InitializeEncoder failed", é isto.',
         )
 
-    hw = info.hardware_encoders()
+    hw = _ask(report, "encoders de hardware", info.hardware_encoders)
+    if hw is None:
+        return info
     if hw:
         report.add(Level.OK, "encoders de hardware", ", ".join(hw))
     else:
@@ -203,7 +223,8 @@ def check_ffmpeg(report: Report, cfg: Config) -> ff.FFmpegInfo | None:
     except ff.FFmpegError as exc:
         report.add(Level.FAIL, "encoder escolhido", str(exc).splitlines()[0])
     else:
-        level = Level.OK if chosen.startswith(codec) else Level.WARN
+        # `libx265` é HEVC apesar do nome: quem decide é a família, não o prefixo.
+        level = Level.OK if ff.codec_of(chosen) == codec else Level.WARN
         detail = chosen if level is Level.OK else f"{chosen} — o codec pedido era {codec}"
         report.add(
             level,
@@ -219,7 +240,10 @@ def check_ffmpeg(report: Report, cfg: Config) -> ff.FFmpegInfo | None:
 
 def check_capture(report: Report, info: ff.FFmpegInfo) -> None:
     """Só no Windows: o ddagrab é a captura, e sem ele não há projeto."""
-    if "ddagrab" in info.filters:
+    filters = _ask(report, "ddagrab (captura na GPU)", lambda: info.filters)
+    if filters is None:
+        return
+    if "ddagrab" in filters:
         report.add(Level.OK, "ddagrab (captura na GPU)", "presente")
     else:
         report.add(
@@ -231,7 +255,10 @@ def check_capture(report: Report, info: ff.FFmpegInfo) -> None:
 
 
 def check_srt(report: Report, info: ff.FFmpegInfo, cfg: Config) -> None:
-    has_srt = "srt" in info.protocols
+    protocols = _ask(report, "protocolo SRT no ffmpeg", lambda: info.protocols)
+    if protocols is None:
+        return
+    has_srt = "srt" in protocols
 
     if ff.IS_WINDOWS:
         if has_srt:
@@ -247,7 +274,7 @@ def check_srt(report: Report, info: ff.FFmpegInfo, cfg: Config) -> None:
 
     # Mac: a ausência é o esperado (baseline §1) e não é defeito.
     report.add(
-        Level.OK if not has_srt else Level.OK,
+        Level.OK,
         "protocolo SRT no ffmpeg",
         "presente" if has_srt else "ausente — esperado no Homebrew (baseline §1)",
         ""
@@ -321,11 +348,15 @@ def check_network(report: Report, cfg: Config) -> None:
         if udp_port_is_free(port):
             report.add(Level.OK, f"porta {port}/UDP", "livre para o sender")
         else:
+            # AVISO, não FALHA: o caso mais comum é o sender já estar no ar, e o
+            # doctor precisa ser seguro de rodar durante uma sessão. Só depois de
+            # confirmar que não há sender é que a porta ocupada vira problema.
             report.add(
-                Level.FAIL,
+                Level.WARN,
                 f"porta {port}/UDP",
                 "ocupada",
-                "Provável ffmpeg órfão de uma rodada anterior. Encerre-o:\n"
+                "Esperado se o `lanstream send` já estiver rodando — neste caso, ignore.\n"
+                "Se não estiver, é ffmpeg órfão de uma rodada anterior segurando a porta:\n"
                 "  Get-Process ffmpeg | Stop-Process",
             )
 
