@@ -27,8 +27,11 @@ que roda a 60 fps dentro desse teto.
    parede fica ~1.0 mesmo perdendo frame (medido: 52 fps *com* speed 0.995x).
    `speed` só cai quando a **captura trava**, que é coisa mais grave — foi o que o
    §4d viu a 0.942x. Não use os dois como se fossem o mesmo eixo (§4f).
-6. **Compare sempre contra 57 fps**, que é o sender sem rede nenhuma no caminho
-   (§4f). Não contra 60.
+6. **`fps=` do ffmpeg é média acumulada — não taxa instantânea.** Ele é
+   `frame ÷ elapsed` desde o início, então sobe sozinho durante a corrida e
+   **corridas curtas subestimam o fps**. Para a taxa real, pegue duas amostras e
+   faça `Δframe ÷ Δt`. Nunca compare fps de corridas de duração diferente (§4h).
+   Referência medida com jogo real: **54–58 fps instantâneos, média 56.2**.
 7. **Tela em movimento durante a medição.** Com o desktop parado o `hevc_nvenc` em
    CBR entrega ~1.7 Mbps e a rede nunca é estressada — `-b:v` é teto, não piso.
    Rodada com tela parada não mede nada e o `0 drops` dela é falso positivo (§4f).
@@ -80,7 +83,13 @@ está confirmado por um terceiro método e o T1 vira o default definitivo.
 
 ---
 
-## T3 — Jogo real em fullscreen exclusivo 🔴 o último risco existencial do projeto
+## T3 — Jogo real ✅ **executado em 29/08 — a DDA captura**
+
+> **Risco existencial eliminado** (§4g): o `ddagrab` entregou frame de jogo por 3
+> minutos, confirmado visualmente. Mas o título testado (Resident Evil clássico:
+> 4:3 em pillarbox, cenários pré-renderizados, fonte de 30 fps) é quase o caso mais
+> fácil possível e só gerou **8.96 Mbps**. **Falta refazer com jogo 3D moderno**,
+> de preferência com anti-cheat — é lá que a captura costuma ser bloqueada.
 
 **É o teste mais importante da lista.** Tudo que foi medido até aqui usou o
 desktop. O `ddagrab` usa a Desktop Duplication API, e ela se comporta diferente com
@@ -109,7 +118,12 @@ renderizando a 60 fps contínuos, o número pode subir. Anote o `fps=` do sender
 
 ---
 
-## T4 — Estabilidade de 10 minutos 🟡 critério de saída da Fase 0
+## T4 — Estabilidade de 10 minutos ✅ **passou em 29/08**
+
+> **10:26 contínuos, zero erro no log, `speed` em 1.000x do minuto 1 ao 10** (§4h).
+> Sem degradação de fps, bitrate ou drift. Terminou por desconexão do receptor, não
+> por colapso. **O critério de saída da Fase 0 está batido** — para este bitrate
+> (~8.4 Mbps) e este jogo. Falta repetir com 15 Mbps reais no caminho.
 
 Com a config vencedora, deixe rodando **10 minutos sem tocar em nada**. Eu mantenho
 o receptor conectado e acompanho drops acumulados e drift.
@@ -154,5 +168,5 @@ default não custa nada. Fica registrado para não parecer esquecido.
 |---|---|---|---|---|---|---|---|---|
 | T1 | hevc | 15M | 1200 | 52 | 0.995x | não medido | não medido | ⚠️ inconclusivo — só 1.67 Mbps no caminho (§4f) |
 | T2 | hevc | 20M | 1200 | | | | | |
-| T3 | hevc | 15M | 1200 | | | | | jogo real |
-| T4 | — | — | — | | | | | 10 min |
+| T3 | hevc | 15M | 1200 | 52 | 0.999x | não medido | não medido | ✅ DDA captura o jogo (§4g). Bitrate só 8.96 Mbps — título fácil, não testa 15M |
+| T4 | hevc | 15M | 1200 | 56 (56.2 inst.) | 1.000x | não medido | não medido | ✅ **10:26 contínuos, zero erro, sem degradação (§4h)** |
