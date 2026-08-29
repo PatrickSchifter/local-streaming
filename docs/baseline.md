@@ -654,7 +654,7 @@ com **latência SRT de 1.2 s dos dois lados** — `latency=1200000` no ffmpeg
 
 ---
 
-## 4d. 🟡 Experimento do buffer de 1.2 s — metade medida
+## 4d. ✅ Experimento do buffer de 1.2 s — fechado
 
 O experimento que o §4b propôs e o §4c refinou: **20 Mbps com buffer SRT de 1.2 s**
 nos dois lados, para separar "fila limitada, buffer pequeno" de "caminho estreito
@@ -721,6 +721,71 @@ log, o experimento se resolve em um minuto.
 Se confirmar que 20 Mbps não passa mesmo com buffer grande, o caminho seguinte não
 é mexer em bitrate nem em buffer: é **pôr o Mac no cabo** (adaptador USB-C) e
 eliminar o downlink do AP, que o §4c isolou como a única perna suspeita.
+
+### ✅ A metade que faltava — medida do lado do Mac
+
+O receptor rodou contra **esta mesma corrida** (20M / buffer 1200 ms), com
+`srt-live-transmit ... latency=1200` e o log guardado.
+
+| Critério do experimento | Resultado |
+|---|---|
+| `RCV-DROPPED` | ✅ **0** (eram dezenas por corrida a 120 ms) |
+| `error while decoding` / `concealing` | ✅ **0** (eram dezenas, inclusive em I-frames) |
+| Frames recebidos | **1294 em 25.00 s ≈ 52 fps** |
+| fps de processamento / speed | 57 / 1.09x |
+
+**48 fps chegando limpo** — que é, pelo critério escrito acima, o resultado bom.
+Os ~52 fps medidos na chegada batem com os 48 fps relatados pelo sender (janelas
+de medição diferentes). E a dúvida sobre a latência efetiva fica resolvida por
+observação, não por inferência: o receptor rodou com 1200 ms explícitos.
+
+---
+
+## 4e. 🔎 Síntese: era a rede **e** o buffer, com papéis diferentes
+
+Juntando as duas metades, e **corrigindo duas leituras minhas que estavam erradas**:
+
+> ❌ Eu tinha atribuído tudo ao uTorrent. O §4c rejeitou isso com teste controlado.
+> ❌ Depois concluí "era o buffer, não a rede". Também está errado — a
+> contrapressão medida no sender mostra que o caminho é, sim, o limite.
+
+O quadro que explica **todas** as observações de uma vez:
+
+1. **O caminho Windows→Mac entrega ~17 Mbps limpos.** O sender foi freado até
+   17.35 Mbps e nessa taxa a entrega foi perfeita. Isso é notavelmente próximo do
+   joelho de ~16 Mbps que o `iperf3 -u` do §4 encontrou — os dois métodos, por
+   caminhos independentes, apontam o mesmo teto.
+2. **O buffer do SRT não muda a capacidade — muda o modo de falhar.**
+   - Buffer pequeno (120 ms): a SRT **descarta** o que atrasa. O sender corre solto
+     a 30 Mbps, o excesso vira `RCV-DROPPED`, e o que chega vem **corrompido**.
+   - Buffer grande (1.2 s): a SRT **segura** em vez de descartar. A contrapressão
+     sobe até a captura, o sender cai para 48 fps — e o que chega vem **perfeito**.
+
+   Ou seja: o buffer grande trocou **corrupção** por **degradação graciosa de
+   framerate**. Para este projeto isso é claramente melhor, mas não é o mesmo que
+   resolver.
+3. **A hipótese (3) do §4b (contrapressão *no Mac*) continua descartada.** A
+   contrapressão medida é do SRT freando o sender, não do receptor deixando de
+   drenar: o caminho `srt-live-transmit → pipe → ffmpeg` foi idêntico nas corridas
+   suja e limpa.
+
+### O que fica decidido
+
+- **Buffer alto vira default do `lanstream`** (1.2 s nas duas pontas). Pelo §3.1 do
+  PLANO é de graça, e a diferença entre corrompido e limpo é grande demais para
+  tratar como tuning.
+- **O teto de ~16–17 Mbps do §4 se sustenta** e não era artefato de rajada do
+  `iperf3` — foi confirmado por um transporte pacejado, com ARQ, em stream real.
+- **HEVC volta a ser requisito, não preferência**, como o §4 já dizia: dentro de
+  ~16 Mbps é o que torna 1080p60 viável.
+- **Falta um teste para fechar:** `hevc_nvenc -Bitrate 15M -LatencyMs 1200`. Se o
+  sender mantiver 57–58 fps e o receptor continuar em 0 drops, o projeto tem uma
+  configuração de produção e a rede sai do caminho crítico. **É o próximo passo.**
+- Se ainda houver freio a 15 Mbps, aí sim o caminho é **pôr o Mac no cabo**
+  (adaptador USB-C), que o §4c isolou como a única perna suspeita.
+
+---
+
 
 ---
 
