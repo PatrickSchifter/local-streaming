@@ -22,10 +22,29 @@ que roda a 60 fps dentro desse teto.
 4. **Me avise quando o sender estiver escutando.** Eu conecto do Mac, meço e colo os
    números. Sem o lado do receptor, metade do experimento não existe — foi o que
    aconteceu no §4d.
+5. **`fps` é a métrica de freio — `speed` não é.** Numa fonte ao vivo o `ddagrab`
+   carimba timestamp em tempo real, então `speed` = tempo de mídia ÷ relógio de
+   parede fica ~1.0 mesmo perdendo frame (medido: 52 fps *com* speed 0.995x).
+   `speed` só cai quando a **captura trava**, que é coisa mais grave — foi o que o
+   §4d viu a 0.942x. Não use os dois como se fossem o mesmo eixo (§4f).
+6. **Compare sempre contra 57 fps**, que é o sender sem rede nenhuma no caminho
+   (§4f). Não contra 60.
+7. **Tela em movimento durante a medição.** Com o desktop parado o `hevc_nvenc` em
+   CBR entrega ~1.7 Mbps e a rede nunca é estressada — `-b:v` é teto, não piso.
+   Rodada com tela parada não mede nada e o `0 drops` dela é falso positivo (§4f).
 
 ---
 
-## T1 — HEVC a 15 Mbps 🔴 é o que decide a configuração de produção
+## T1 — HEVC a 15 Mbps ⚠️ executado em 29/08, **inconclusivo — refazer**
+
+> **Rodado. Não decidiu nada.** Sender deu `fps=52 speed=0.995x` em 37 s, mas o
+> stream carregou só **1.67 Mbps** — desktop parado, e o `hevc_nvenc` em CBR não
+> preenche com stuffing, então `-b:v 15M` é teto e não piso. A rodada pediu 10% do
+> teto de 17 Mbps que ela deveria estressar. Detalhe em `baseline.md` §4f.
+>
+> **Para refazer, a tela precisa estar em movimento** (vídeo 1080p60 em tela cheia)
+> — ou pule direto para o **T3**, que gera o bitrate de graça e ainda ataca o risco
+> existencial. Um `0 drops` com a tela parada é falso positivo.
 
 ```powershell
 git pull
@@ -39,7 +58,7 @@ powershell -ExecutionPolicy Bypass -File scripts\win-test-video.ps1 `
 | Resultado | Significa |
 |---|---|
 | Sender em **57–58 fps / speed ~0.99x** e receptor em **0 drops** | ✅ **Configuração de produção encontrada.** A rede sai do caminho crítico e a Fase 0 fecha. |
-| Sender freado (**< 55 fps / speed < 0.97x**) | O caminho não aguenta nem 15 Mbps → vai para o **T5**. |
+| Sender freado (**< 55 fps**, com bitrate real no caminho) | O caminho não aguenta nem 15 Mbps → vai para o **T5**. |
 | Receptor com drops mesmo sem freio | Buffer ainda pequeno para o caminho → subir para 2000 ms e repetir. |
 
 > Por que HEVC: a ~15 Mbps ele rende aproximadamente o que o H.264 renderia a 25.
@@ -133,7 +152,7 @@ default não custa nada. Fica registrado para não parecer esquecido.
 
 | Teste | Codec | Bitrate | Buffer | fps sender | speed | drops (Mac) | erros decode | Veredito |
 |---|---|---|---|---|---|---|---|---|
-| T1 | hevc | 15M | 1200 | | | | | |
+| T1 | hevc | 15M | 1200 | 52 | 0.995x | não medido | não medido | ⚠️ inconclusivo — só 1.67 Mbps no caminho (§4f) |
 | T2 | hevc | 20M | 1200 | | | | | |
 | T3 | hevc | 15M | 1200 | | | | | jogo real |
 | T4 | — | — | — | | | | | 10 min |

@@ -786,6 +786,112 @@ O quadro que explica **todas** as observações de uma vez:
 
 ---
 
+## 4f. ⚠️ T1 executado — inconclusivo, e dois achados de método
+
+Data: 2026-08-29. Primeira execução do teste que o §4e apontou como "o próximo
+passo": `hevc_nvenc -Bitrate 15M -LatencyMs 1200`.
+
+**Veredito: inconclusivo.** Não por falha de execução — o stream subiu, o Mac
+conectou e a corrida durou 37 s sem colapsar. É que a rodada **não produziu o
+bitrate que ela existia para testar**. Detalhe no achado 1.
+
+### Preflight (tudo íntegro)
+
+| Item | Estado |
+|---|---|
+| ffmpeg | **8.1** com `hevc_nvenc` e `--enable-libsrt` — a versão fixada pelo §7 resistiu |
+| `EEELinkAdvertisement` | **Desligado** — a correção do §4c sobreviveu a reboots |
+| Ethernet (I219-V) | ainda **100 Mbps**, Windows `192.168.0.12` |
+| Mac (`192.168.0.21`) | responde, RTT médio 4 ms |
+| uTorrent | **rodando, limitado a 25 KB/s de upload** (~0.2 Mbps). Fora da regra 2 do
+  `proximos-testes.md`, que pede fechado. Aceito nesta rodada: 0.2 Mbps contra um
+  teto de 17 Mbps é ruído, e o §4c já tinha inocentado o uTorrent com teste
+  controlado. Fica registrado como condição da corrida. |
+
+### Corrida de controle — a mesma config, sem rede no caminho
+
+Antes de envolver o Mac, a config exata do T1 encodando para `NUL` por 15 s:
+
+```
+frame=865  fps=57  speed=0.993x  q=1.0   (média ~3.2 Mbps)
+```
+
+Isso é o número que faltava para ler o T1: **57 fps é o teto do pipeline de
+captura+encode sozinho**, sem SRT. A faixa "57–58 fps" que o `proximos-testes.md`
+pede para declarar vitória *é* o comportamento sem rede — o critério estava certo,
+só não tinha referência medida. Qualquer déficit no T1 passa a ser atribuível ao
+caminho e não ao encoder.
+
+### A corrida do T1
+
+```
+frame=1957  fps=52  speed=0.995x  q=1.0   (média 1.67 Mbps, 37.38 s)
+```
+
+Terminou com `Error submitting a packet to the muxer: I/O error` — a assinatura de
+desconexão do caller que o §4e documenta, não colapso. Décima corrida seguida a
+terminar por fechamento do receptor.
+
+**Lado do Mac: não coletado.** Segue como a metade que falta, igual ao §4d.
+
+### 🔴 Achado 1 — desktop parado não gera bitrate, e isso invalida a rodada
+
+O stream carregou **1.67 Mbps**. O teto do caminho é ~17 Mbps (§4e). A rodada pediu
+**10% da capacidade** que ela deveria estar estressando.
+
+A causa: com a tela parada o conteúdo é trivial (`q=1.0` durante quase toda a
+corrida) e **o `hevc_nvenc` em CBR não preenche com stuffing** — o `-b:v 15M` é
+teto, não piso. O controle sem rede mostrou o mesmo em outra escala: 3.2 Mbps.
+
+Consequência prática, e vale para todo teste futuro: **um `0 drops` do Mac numa
+corrida de desktop parado não prova nada.** Não houve o que estressar. O T1 precisa
+de tela em movimento — vídeo 1080p60 em tela cheia, ou direto o jogo do T3 — para
+medir o que foi desenhado para medir. Isso não estava escrito em lugar nenhum e é
+provavelmente o motivo de os números do §4a–§4d serem tão bem comportados.
+
+### 🟡 Achado 2 — `speed` não é métrica de freio numa fonte ao vivo
+
+A tabela do T1 trata `speed < 0.97x` como sinal de freio, em paralelo com o fps.
+Nesta corrida os dois se contradizem: **52 fps** bate no gatilho "< 55 → vai para o
+T5", e **0.995x** diz que está tudo bem.
+
+Quem está errado é o `speed`. A conta: 1957 frames com `time=00:00:37.38`. Se o
+stream estivesse numa grade fixa de 60 fps, 1957 frames dariam **32.6 s** de mídia,
+não 37.4. Ou seja, **o `ddagrab` carimba timestamp em tempo real, não em grade
+fixa** — frame perdido não encurta o tempo de mídia, ele só rareia os frames dentro
+dele. Como `speed` = tempo de mídia ÷ relógio de parede, numa captura ao vivo ele é
+~1.0 por construção, mesmo perdendo frame.
+
+**`fps` é a métrica de freio. `speed` não é.**
+
+Isso **não** invalida o §4d: lá o `speed` caiu para **0.942x**, e num live source
+isso significa algo mais grave que perder frame — a captura em si travou, o
+pipeline não conseguiu nem acompanhar o relógio. O sinal era real. Só não é o
+mesmo eixo do fps, e a tabela do `proximos-testes.md` os tratava como
+intercambiáveis.
+
+### Então os 52 fps são freio da rede?
+
+Quase certamente **não**. Com 1.67 Mbps num caminho de 17 Mbps não há de onde vir
+contrapressão, e o `speed` de 0.995x confirma que nada travou. O controle sem rede
+deu 57 fps a 3.2 Mbps na mesma máquina, minutos antes; a diferença mais provável é
+o próprio `ddagrab` variando com o que estava na tela — o mesmo efeito que o §7 já
+registra como "`ddagrab` limita em ~56–58 fps".
+
+**Concluir "vai para o T5" a partir desta corrida seria erro.** O T5 (Mac no cabo)
+continua condicionado a um freio medido *com bitrate real no caminho*.
+
+### O que fica decidido
+
+- **O T1 precisa ser refeito com a tela em movimento.** Como está, não testa nada.
+- **Alternativa melhor: pular direto para o T3.** Um jogo real em fullscreen
+  exclusivo gera o bitrate *e* ataca o único risco existencial que sobrou (§7,
+  `ddagrab` não capturar o jogo). O T1 vira subproduto do T3, medido de graça.
+- **A coluna `speed` sai do critério de freio** do `proximos-testes.md`; fica só
+  como detector de travamento de captura, que é o que ela mediu no §4d.
+- **57 fps / sem rede** passa a ser a linha de base de regressão do sender.
+
+
 
 ---
 
