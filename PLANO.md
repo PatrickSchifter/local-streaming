@@ -104,8 +104,15 @@ esperando e o OBS reconecta sozinho quando quiser, sem precisar reiniciar o send
 - **H.264** como fallback universal.
 - AV1 só se a GPU do Windows for RTX 40+ *e* o decode no Mac for M3+. Fase 7, opcional.
 
-Bitrate em LAN cabeada não é gargalo: 30–60 Mbps CBR em 1080p60 é confortável e
-deixa a imagem praticamente sem perda visível. O OBS reencoda pra Twitch depois.
+~~Bitrate em LAN cabeada não é gargalo: 30–60 Mbps CBR em 1080p60 é confortável e
+deixa a imagem praticamente sem perda visível.~~ O OBS reencoda pra Twitch depois.
+
+> 🔴 **Desmentido na Fase 0.** O bitrate **é** o gargalo nesta rede. O `iperf3`
+> mediu perda de pacote em UDP acima de 16 Mbps (`docs/baseline.md` §4), então
+> 30–60 Mbps não cabe. Duas consequências: **HEVC deixa de ser preferência e vira
+> requisito** (a 15 Mbps rende aproximadamente o que o H.264 renderia a 25), e
+> vale atacar a rede antes de aceitar o teto — cabo Cat5e/Cat6 no Windows e
+> adaptador Ethernet USB-C no Mac.
 
 ### 3.4 Stack
 
@@ -143,9 +150,10 @@ local-streaming/
 
 ---
 
-> **Status:** Fase 0 quase fechada — Mac e Windows levantados, toolchain instalado
-> nas duas pontas, SRT e NVENC validados. Falta o que exige as duas máquinas ligadas
-> ao mesmo tempo (Testes 1 e 2) e o teste com jogo real em fullscreen exclusivo.
+> **Status:** Fase 0 essencialmente fechada. Testes 1 e 2 executados com as duas
+> máquinas. O vídeo chega no Mac. **Mas a rede virou o maior risco do projeto:** o
+> teto utilizável medido é ~16 Mbps, contra os 30–60 Mbps que o §3.3 assume.
+> Falta o teste com jogo real em fullscreen exclusivo.
 > Achados e números em [`docs/baseline.md`](docs/baseline.md).
 
 ## 4. Fases
@@ -166,11 +174,11 @@ Se essa fase falhar, a arquitetura muda e nada do resto foi desperdiçado.
       Mac: `brew install ffmpeg`). Confirmar `ffmpeg -encoders | grep nvenc` e
       `ffmpeg -filters | grep ddagrab` no Windows.
 - [x] Descobrir o IP local do Windows e liberar a porta 9000/UDP no Windows Firewall.
-- [ ] **Teste 1 — só vídeo, na mão.** No Windows:
+- [x] **Teste 1 — só vídeo, na mão.** No Windows:
       `ffmpeg -f lavfi -i ddagrab=0:framerate=60 -c:v h264_nvenc -preset p5 -tune ll -b:v 30M -f mpegts "srt://0.0.0.0:9000?mode=listener"`
       No Mac: `ffplay "srt://<IP-WIN>:9000?mode=caller"`.
 - [ ] **Teste 2 — dentro do OBS.** Media Source com a mesma URL SRT.
-- [ ] Medir: throughput real (`iperf3` entre as máquinas), latência ponta-a-ponta
+- [x] Medir: throughput real (`iperf3` entre as máquinas), latência ponta-a-ponta
       (cronômetro na tela do Windows filmado pela cena do OBS), estabilidade em 10min.
 - [x] Registrar tudo em `docs/baseline.md` — os números viram a referência de regressão.
 

@@ -26,11 +26,17 @@ Data: 2026-08-28
 | Sinal / ruído | **-43 dBm** / -93 dBm (SNR 50 dB — excelente) |
 | Transmit rate (PHY) | 1814 Mbps, MCS 9 |
 
-> O link é muito melhor do que o plano assumia. A 1.8 Gbps de PHY, um stream de
+> ~~O link é muito melhor do que o plano assumia. A 1.8 Gbps de PHY, um stream de
 > 30–50 Mbps ocupa menos de 3% da capacidade. **A recomendação de "use cabo" do
 > plano perde força** — e o MacBook Air nem tem porta Ethernet, exigiria adaptador
 > USB-C. O que ainda precisa ser medido não é vazão, é **jitter sob carga**
-> (ver §4, teste pendente de `iperf3`).
+> (ver §4, teste pendente de `iperf3`).~~
+
+> 🔴 **Esta leitura estava errada e o §4 desmentiu.** O PHY de 1814 Mbps não se
+> traduziu em vazão utilizável: o `iperf3` mediu **48.7 Mbps de TCP** e perda de
+> pacote em UDP já a partir de 17 Mbps. Taxa de PHY do Wi-Fi não é vazão, e aqui a
+> distância entre as duas é de mais de 30x. **A recomendação de "use cabo" do plano
+> volta a valer com força** — inclusive do lado do Mac, via adaptador USB-C.
 
 ### Software instalado nesta fase
 
@@ -326,49 +332,113 @@ O que sobrou **precisa de você ou da outra máquina**:
 
 ---
 
-## 3. Teste 1 — vídeo ponta a ponta 🟡 metade validada
+## 3. Teste 1 — vídeo ponta a ponta ✅ executado
 
-**Já provado nesta máquina** (ver §2): o script roda, o `ddagrab` captura, o
-`h264_nvenc` encoda em tempo real, o SRT listener aceita conexão pelo IP da LAN e
-entrega `h264 / 1080p60 / mpegts` a 30.1 Mbps. Um segundo ffmpeg fez o papel do
-Mac.
+Rodado com o Mac de verdade do outro lado, via
+`scripts/win-test-video.ps1 -Gpu nvidia -Bitrate <X>` no Windows e
+`./scripts/mac-preview.sh 192.168.0.12` no Mac.
 
-**Falta o que só o Mac responde:**
+| | **30M** (padrão do script) | **15M** |
+|---|---|---|
+| Duração até cair | **13.55 s** | **26.95 s** |
+| Frames | 777 | 1586 |
+| fps | 56 | **58** |
+| Bitrate medido | 29.3 Mbps | **15.07 Mbps** (travado) |
+| speed | 0.983x | **0.993x** |
+| Frames perdidos na captura | 5 | — |
+| Fim | `Error submitting a packet to the muxer: I/O error` | idem |
 
-**Windows:**
+**O vídeo chega no Mac.** O caminho completo — `ddagrab` → `h264_nvenc` → MPEG-TS →
+SRT listener → LAN → Mac — funciona de ponta a ponta. Isso fecha o critério
+principal do Teste 1.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\win-test-video.ps1 -Gpu nvidia
+A 15M o stream fica visivelmente mais saudável: bitrate cravado em 15.07 Mbps,
+`speed` em 0.993x e **58 fps** contra os 56 da corrida a 30M.
+
+### ⚠️ Ressalva honesta sobre a causa da queda
+
+As duas corridas terminaram em `I/O error`, e **não dá para afirmar daqui por que
+elas terminaram**. O `I/O error` no lado do sender é o que aparece tanto quando o
+SRT colapsa por congestionamento quanto quando o `ffplay` é simplesmente fechado
+no Mac. Não houve instrumentação para distinguir os dois casos.
+
+O que os números sugerem, sem provar: a corrida a 30M durou metade da corrida a
+15M, e 30 Mbps está muito acima do teto limpo de 16 Mbps medido no §4. É
+consistente com congestionamento, mas é correlação, não causa estabelecida.
+
+**Como fechar isso de verdade:** rodar as duas de novo cronometrando o fechamento
+do `ffplay`, ou deixar o `mac-preview.sh` rodando 10 minutos sem tocar. Se a 15M
+sobreviver 10 min e a 30M cair sempre por volta dos 13 s, aí sim é congestionamento.
+
+## 4. Teste 2 — vazão e jitter ✅ executado
+
+`iperf3 3.21` nos dois lados, Mac como servidor (`iperf3 -s`).
+
+### TCP — 30 s
+
+```
+iperf3 -c 192.168.0.21 -t 30
 ```
 
-**Mac:**
+| Métrica | Valor | Alvo |
+|---|---|---|
+| Média | **48.7 Mbps** | ≥100 Mbps ❌ |
+| Faixa por segundo | 27 – 62 Mbps | — |
+| Transferido | 174 MB | — |
 
-```bash
-./scripts/mac-preview.sh 192.168.0.12
+Não só ficou muito abaixo do alvo como **oscilou o tempo todo**, quase 2:1 entre o
+pior e o melhor segundo.
+
+### UDP — o que importa pra SRT
+
+```
+iperf3 -c 192.168.0.21 -u -b <X> -t 30
 ```
 
-Critério: imagem da tela do Windows aparecendo na janela do ffplay.
+| Alvo | Recebido | Jitter | **Perda** |
+|---|---|---|---|
+| 5 Mbps | 4.99 Mbps | 0.582 ms | **0%** |
+| 10 Mbps | 9.98 Mbps | 0.123 ms | **0%** |
+| 15 Mbps | 15.0 Mbps | 0.167 ms | **0%** |
+| **16 Mbps** | 16.0 Mbps | 0.010 ms | **0%** ← teto limpo |
+| 17 Mbps | 16.9 Mbps | 0.227 ms | 0.21% |
+| 18 Mbps | 17.9 Mbps | 0.046 ms | 0.53% |
+| 20 Mbps | 19.6 Mbps | 0.187 ms | 1.6% |
+| 25 Mbps | 23.9 Mbps | 0.085 ms | **4.4%** |
 
-**E o teste que mais importa:** repetir com **um jogo real em fullscreen
-exclusivo**. Capturar o desktop já funciona; capturar um jogo é outra história, e
-é o risco listado no §5 do plano.
+**O jitter passa folgado em toda a faixa** — sempre abaixo de 0.6 ms contra um alvo
+de 5 ms. O problema é inteiramente **perda de pacote**, e ela tem um joelho
+nítido: some completamente até 16 Mbps e cresce rápido depois.
 
-## 4. Teste 2 — vazão e jitter ⏳ pendente (falta o Mac)
+### 🔴 O que isso significa pro projeto
 
-O `iperf3` **já está instalado nos dois lados**, na mesma versão 3.21.
+**O teto utilizável é 16 Mbps, não os 30–60 Mbps que o §3.3 do plano assume.**
+É uma diferença de 2 a 4x, e é o fato mais importante levantado até agora.
 
-**Mac** (servidor): `iperf3 -s`
-**Windows** (cliente): `iperf3 -c 192.168.0.21 -t 30`
-Depois, o que realmente importa pra streaming — **UDP com jitter e perda**:
-`iperf3 -c 192.168.0.21 -u -b 60M -t 30`
+Duas anomalias que valem registro:
 
-> ⚠️ **Alvo original inalcançável.** O plano pedia "≥ 100 Mbps sustentados no TCP",
-> mas o link do Windows negocia a 100 Mbps (§2), o que dá ~94 Mbps reais de TCP na
-> melhor hipótese. Enquanto o cabo não for trocado, o alvo realista é **≥ 90 Mbps
-> TCP**. O critério de UDP continua válido e é o que de fato importa: a 60 Mbps,
-> perda < 0.1% e jitter < 5 ms.
+1. **UDP degrada muito antes do TCP.** O TCP sustenta 48.7 Mbps de média, mas o UDP
+   já perde pacote a 17 Mbps. O normal seria o oposto — UDP não tem controle de
+   congestionamento e costuma alcançar mais. Essa inversão aponta para **fila /
+   buffer no caminho** (provavelmente o AP), não para falta de banda bruta.
+2. **48.7 Mbps é metade do que um link de 100 Mbps deveria dar.** Então o cabo de
+   100 Mbps do §2 não explica tudo sozinho. O Mac está em **Wi-Fi**, e a oscilação
+   de 27–62 Mbps tem assinatura de meio sem fio.
 
-Referência já medida: **ping para o Mac em 3 ms**, 4/4 respostas.
+**Consequências práticas:**
+
+- O alvo de "≥100 Mbps TCP" do plano não é só inalcançável no link atual — está a
+  2x de distância do que a rede entrega hoje.
+- **HEVC deixa de ser preferência e vira necessidade.** O §3.3 já elegia
+  `hevc_nvenc` como alvo; a 15 Mbps HEVC entrega aproximadamente a qualidade de
+  ~25 Mbps em H.264. É o que torna 1080p60 viável dentro do teto medido.
+- A SRT tem ARQ e **recupera parte da perda** retransmitindo. A 17–20 Mbps
+  (0.2–1.6%) provavelmente ainda dá, com folga de latência maior. A 25 Mbps (4.4%)
+  é pedir demais.
+- Antes de aceitar 16 Mbps como limite do projeto, vale atacar a rede: trocar o
+  cabo do Windows por Cat5e/Cat6 e, principalmente, **testar com o Mac no cabo**
+  (exige adaptador USB-C, já que o MacBook Air não tem porta Ethernet) para isolar
+  quanto da perda é do Wi-Fi.
 
 ## 5. Teste 3 — dentro do OBS ⏳ pendente
 
@@ -388,8 +458,10 @@ Windows, então latência alta só afeta o sync com o microfone (§3.1 do PLANO)
 
 | Risco | Status |
 |---|---|
-| Wi-Fi não sustentar o bitrate | 🟢 **Muito menor que o previsto** — Wi-Fi 6 160 MHz a -43 dBm. Falta só medir jitter. |
-| **Ethernet do Windows a 100 Mbps** | 🟡 **Novo, e inverte o gargalo.** O I219-V é gigabit mas negociou 100 Mbps — cabo ou porta do roteador. Torna a meta de "≥100 Mbps TCP" (§4) inalcançável e deixa o stream ocupando 30–50% do canal. Trocar o cabo antes do Teste 2. |
+| **A rede não sustentar o bitrate** | 🔴 **Virou o maior risco do projeto.** Medido no §4: 48.7 Mbps de TCP e perda de pacote em UDP acima de 16 Mbps. O plano assume 30–60 Mbps — é 2 a 4x mais do que a rede entrega. O jitter, esse sim, passa folgado (< 0.6 ms). |
+| **Ethernet do Windows a 100 Mbps** | 🟡 **Real, mas não explica tudo.** O I219-V é gigabit e negociou 100 Mbps. Só que a vazão medida foi 48.7 Mbps — metade do que o próprio link de 100 Mbps daria. Há um segundo gargalo no caminho, provavelmente o Wi-Fi do Mac ou o roteador. |
+| **UDP degrada muito antes do TCP** | 🟡 **Novo e contraintuitivo.** TCP sustenta 48.7 Mbps mas UDP já perde pacote a 17 Mbps. O esperado seria o oposto. Aponta para fila/buffer no caminho (provável AP), não para falta de banda. Como SRT é UDP, é o número de 16 Mbps que vale. |
+| **HEVC deixou de ser opcional** | 🟡 **Novo.** Com teto de 16 Mbps, 1080p60 em H.264 fica apertado. O `hevc_nvenc` já está validado e a 15 Mbps rende aproximadamente o que o H.264 renderia a 25. Vira dependência da Fase 2, não melhoria da Fase 7. |
 | Mac sem SRT no ffmpeg | 🟢 **Resolvido** — OBS traz libsrt; `srt-live-transmit` cobre o preview. |
 | **MacBook Air M4 é fanless** | 🟡 **Novo.** Decodificar 1080p60 + recodificar pra Twitch + compositar por horas vai esquentar sem ventoinha. O media engine do M4 faz codec em hardware (não é a CPU), mas throttling em live longa é risco real. **Medir na Fase 4:** `sudo powermetrics --samplers smc` durante 30 min de stream. |
 | `ddagrab` não capturar o jogo | 🟡 **Bastante reduzido, mas é o que sobrou de grande.** Captura o desktop, encoda em tempo real e atravessa o SRT pela LAN — tudo verificado. O caso que importa, **jogo em fullscreen exclusivo**, segue sem resposta e só o Teste 1 responde. |
