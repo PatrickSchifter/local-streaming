@@ -81,43 +81,93 @@ O receptor, a ponte SRT e o handshake listener↔caller funcionam.
 
 ---
 
-## 2. Windows (sender) — ⏳ pendente
+## 2. Windows (sender) — ✅ levantado
 
-Não consigo inspecionar essa máquina daqui. Rode e cole a saída:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\win-doctor.ps1
-```
-
-A preencher:
+Coletado em 2026-08-28 via `scripts/win-doctor.ps1` + inspeção complementar
+(`nvidia-smi`, `Get-NetAdapter`, `Win32_SoundDevice`).
 
 | Item | Valor |
 |---|---|
-| GPU / driver | _?_ |
-| Encoders de HW disponíveis | _?_ (nvenc / amf / qsv) |
-| `ddagrab` presente | _?_ |
-| SRT no ffmpeg | _?_ |
-| IP na LAN | _?_ |
-| Link do adaptador | _?_ (cabo gigabit ou Wi-Fi) |
-| Devices de áudio dshow | _?_ |
-| Resolução / refresh do monitor | _?_ |
+| Placa-mãe | Colorful H510M-K M.2 |
+| CPU | Intel Core **i3-10105F** @ 3.70 GHz — 4 cores / 8 threads |
+| RAM | 15.9 GB |
+| GPU | **NVIDIA GeForce RTX 3060, 12 GB** (driver 591.74, VBIOS 94.04.71.40.22) |
+| SO | Windows 10 Pro 22H2, build 19045.6466, x64 |
+| Monitor | 1 monitor, **1920x1080 @ 60 Hz**, escala DPI **150%** |
+| IP na LAN | `192.168.0.12/24` (gateway `192.168.0.1`) |
+| Interface | Ethernet Intel I219-V, MAC `EC-D6-8A-BB-3D-83` |
+| Link | ⚠️ **100 Mbps full-duplex** (auto-negociação ligada) |
+| Disco | `C:` 445 GB (**61.8 GB livres**), `E:` 930 GB (231.8 GB livres) |
 
-### Se o ffmpeg não estiver instalado
+### Software — praticamente nada instalado ainda
 
-```powershell
-winget install --id=Gyan.FFmpeg -e
-```
+| Ferramenta | Estado |
+|---|---|
+| ffmpeg | ❌ **ausente** (winget oferece `Gyan.FFmpeg` 9.0.1) |
+| OBS Studio | ❌ ausente (não é necessário deste lado) |
+| iperf3 | ❌ ausente — bloqueia o Teste 2 (§4) |
+| Python | ❌ só o stub da Microsoft Store, não é Python real |
+| uv | ❌ ausente |
 
-Precisa ser o build **full** (gyan.dev ou BtbN), não o `essentials` — o
-`essentials` vem **sem SRT**, que é exatamente o que o projeto usa.
-Feche e reabra o terminal depois de instalar, pro PATH atualizar.
+Sem ffmpeg, **4 checagens do `win-doctor` ficaram sem resposta** e continuam pendentes:
 
-### Firewall (uma vez, PowerShell como Administrador)
+| Item | Valor |
+|---|---|
+| Encoders de HW disponíveis | ⏳ não verificado — mas a RTX 3060 (Ampere) tem **NVENC 7ª geração**, H.264 + HEVC. Sem encode AV1 (só decode). |
+| `ddagrab` presente | ⏳ não verificado |
+| SRT no ffmpeg | ⏳ não verificado |
+| Devices de áudio dshow | ⏳ não verificado |
+
+### ⚠️ Achado crítico: o link Ethernet negocia a 100 Mbps, não 1 Gbps
+
+O Intel I219-V é **gigabit**, e a auto-negociação está ativa — ainda assim o link
+subiu a **100 Mbps**. Isso não é configuração, é limitação física do caminho:
+cabo Cat5 (ou Cat5e danificado / com par rompido), porta 100M no roteador, ou um
+switch antigo no meio.
+
+**Consequência direta no plano:** a meta do §4 — *"≥ 100 Mbps sustentados no TCP"* —
+é **inalcançável** neste link. O teto teórico é 100 Mbps e o real de TCP fica em
+~94 Mbps. O stream de 30–50 Mbps previsto ocupa **30–50% do canal**, contra os
+<3% que o lado do Mac sugeria. Não inviabiliza, mas some a margem: qualquer outro
+tráfego na rede (backup, update do Windows, outro dispositivo) passa a competir.
+
+A ironia é que o gargalo inverteu — o plano recomendava cabo por desconfiar do
+Wi-Fi, mas aqui o **Wi-Fi 6 do Mac (1814 Mbps PHY) é ~18x mais rápido que o cabo
+do Windows**.
+
+**Ação sugerida antes do Teste 2:** trocar o cabo por um Cat5e/Cat6 conhecido e
+conferir a porta do roteador. Se subir para 1 Gbps, o `LinkSpeed` muda sozinho.
+Se não subir, revisar as metas do §4 para o que 100 Mbps comporta.
+
+### ⚠️ Áudio: não existe device de loopback
+
+`Win32_SoundDevice` lista apenas:
+
+- Realtek High Definition Audio (onboard)
+- NVIDIA High Definition Audio (saída HDMI/DP)
+- NVIDIA Virtual Audio Device (WDM) — **não serve**: é o caminho de áudio do
+  driver NVIDIA para HDMI/DP, não um loopback de captura.
+
+Ou seja: **nenhum VB-CABLE / virtual-audio-capturer**. A Fase 3 (áudio) começa do
+zero. Confirma o risco que estava aberto no §7.
+
+### Firewall
+
+Regra `lanstream SRT` (UDP 9000) **ausente**. Rodar uma vez como Administrador:
 
 ```powershell
 New-NetFirewallRule -DisplayName "lanstream SRT" -Direction Inbound `
   -Protocol UDP -LocalPort 9000 -Action Allow -Profile Private
 ```
+
+### Próximos passos deste lado
+
+1. `winget install --id=Gyan.FFmpeg -e` (build full — o `essentials` não tem SRT).
+2. Reabrir o terminal e rodar `scripts\win-doctor.ps1` de novo para fechar as 4
+   linhas pendentes.
+3. `winget install --id=ar51an.iperf3` (ou equivalente) para o Teste 2.
+4. Criar a regra de firewall.
+5. Investigar o link de 100 Mbps.
 
 ---
 
@@ -165,7 +215,8 @@ Windows, então latência alta só afeta o sync com o microfone (§3.1 do PLANO)
 | Risco | Status |
 |---|---|
 | Wi-Fi não sustentar o bitrate | 🟢 **Muito menor que o previsto** — Wi-Fi 6 160 MHz a -43 dBm. Falta só medir jitter. |
+| **Ethernet do Windows a 100 Mbps** | 🟡 **Novo, e inverte o gargalo.** O I219-V é gigabit mas negociou 100 Mbps — cabo ou porta do roteador. Torna a meta de "≥100 Mbps TCP" (§4) inalcançável e deixa o stream ocupando 30–50% do canal. Trocar o cabo antes do Teste 2. |
 | Mac sem SRT no ffmpeg | 🟢 **Resolvido** — OBS traz libsrt; `srt-live-transmit` cobre o preview. |
 | **MacBook Air M4 é fanless** | 🟡 **Novo.** Decodificar 1080p60 + recodificar pra Twitch + compositar por horas vai esquentar sem ventoinha. O media engine do M4 faz codec em hardware (não é a CPU), mas throttling em live longa é risco real. **Medir na Fase 4:** `sudo powermetrics --samplers smc` durante 30 min de stream. |
 | `ddagrab` não capturar o jogo | 🔴 **Ainda aberto** — é o maior risco do projeto e só o teste no Windows responde. |
-| Áudio loopback no Windows | 🔴 **Ainda aberto** — o `win-doctor` vai dizer se já existe algum device virtual. |
+| Áudio loopback no Windows | 🔴 **Confirmado aberto** — o `win-doctor` rodou: a máquina **não tem nenhum device de loopback** (só Realtek onboard + NVIDIA HDMI/DP; o "NVIDIA Virtual Audio Device" é saída HDMI, não captura). A Fase 3 começa do zero, provavelmente com VB-CABLE. |
