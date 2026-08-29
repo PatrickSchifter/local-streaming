@@ -832,7 +832,44 @@ Terminou com `Error submitting a packet to the muxer: I/O error` — a assinatur
 desconexão do caller que o §4e documenta, não colapso. Décima corrida seguida a
 terminar por fechamento do receptor.
 
-**Lado do Mac: não coletado.** Segue como a metade que falta, igual ao §4d.
+### Lado do Mac — coletado, e confirma o achado 1 pela outra ponta
+
+O receptor rodou contra esta mesma corrida (`srt-live-transmit ... latency=1200`,
+decode por VideoToolbox), 30 s de janela:
+
+| Métrica | Valor |
+|---|---|
+| Codec recebido | `hevc (Main)` 1920x1080 ✅ |
+| `RCV-DROPPED` | 0 |
+| Erros de decode / `concealing` | 0 |
+| `packetsLost` / `packetsDropped` / `packetsRetransmitted` / `packetsBelated` | **0 / 0 / 0 / 0** |
+| `link.rtt` | **2.06 ms** |
+| `msTsbPdDelay` | **1200** — buffer confirmado ativo por observação |
+| `window.congestion` / `window.flight` | 8192 (cheia) / 0 |
+| Frames | **1572 em 30.00 s ≈ 52.4 fps** |
+| **`recv.mbitRate`** | **1.748 Mbps** |
+
+**Duas confirmações independentes, medidas em máquinas diferentes:**
+
+1. **`recv.mbitRate` = 1.748 Mbps** contra os **1.67 Mbps** relatados pelo sender.
+   O achado 1 não é artefato de leitura do ffmpeg no Windows — o bitrate anêmico é
+   real e foi medido também na chegada, por outra ferramenta.
+2. **52.4 fps recebidos** contra os **52 fps** do sender. Com perda zero, o que
+   saiu é o que chegou: os 52 fps são do `ddagrab`, não do caminho.
+
+### ⚠️ E o `0 drops` do Mac é um não-resultado
+
+Registrado explicitamente para não ser citado como aprovação mais tarde: **este
+`0 drops` não valida nada.** A 1.75 Mbps num caminho de ~17 Mbps, o esperado era
+exatamente zero de tudo — inclusive `packetsRetransmitted: 0`, ou seja, o ARQ da
+SRT nem precisou entrar em ação. É o falso positivo que o achado 1 previu, e ele
+se materializou.
+
+O que estes números **de fato** estabelecem é mais modesto, e ainda assim útil:
+o caminho HEVC → MPEG-TS → SRT → VideoToolbox está **funcionalmente correto** de
+ponta a ponta, com o buffer de 1200 ms provado ativo por observação (`msTsbPdDelay`)
+e não por inferência da negociação — que era uma ressalva aberta desde o §4d.
+Capacidade sob carga real segue **não medida**.
 
 ### 🔴 Achado 1 — desktop parado não gera bitrate, e isso invalida a rodada
 
