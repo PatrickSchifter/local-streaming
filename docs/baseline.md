@@ -99,24 +99,70 @@ Coletado em 2026-08-28 via `scripts/win-doctor.ps1` + inspeção complementar
 | Link | ⚠️ **100 Mbps full-duplex** (auto-negociação ligada) |
 | Disco | `C:` 445 GB (**61.8 GB livres**), `E:` 930 GB (231.8 GB livres) |
 
-### Software — praticamente nada instalado ainda
+### Software
 
 | Ferramenta | Estado |
 |---|---|
-| ffmpeg | ❌ **ausente** (winget oferece `Gyan.FFmpeg` 9.0.1) |
+| ffmpeg | ✅ **8.1 full_build** (gyan.dev), via `winget install --id=Gyan.FFmpeg -e --version 8.1` |
 | OBS Studio | ❌ ausente (não é necessário deste lado) |
 | iperf3 | ❌ ausente — bloqueia o Teste 2 (§4) |
 | Python | ❌ só o stub da Microsoft Store, não é Python real |
 | uv | ❌ ausente |
 
-Sem ffmpeg, **4 checagens do `win-doctor` ficaram sem resposta** e continuam pendentes:
+Mesma versão de ffmpeg do Mac (8.1), o que dá paridade entre as duas pontas.
+**Não use a 9.0.1** — ver o achado do NVENC abaixo.
 
-| Item | Valor |
+### ✅ Capacidades do ffmpeg verificadas
+
+| Item | Resultado |
 |---|---|
-| Encoders de HW disponíveis | ⏳ não verificado — mas a RTX 3060 (Ampere) tem **NVENC 7ª geração**, H.264 + HEVC. Sem encode AV1 (só decode). |
-| `ddagrab` presente | ⏳ não verificado |
-| SRT no ffmpeg | ⏳ não verificado |
-| Devices de áudio dshow | ⏳ não verificado |
+| `ddagrab` | ✅ presente **e capturando** — testado contra a tela real, não só listado em `-filters` |
+| Protocolo SRT | ✅ `srt OK` |
+| `h264_nvenc` | ✅ funciona (teste de encode real, não só listagem) |
+| `hevc_nvenc` | ✅ funciona |
+| `av1_nvenc` | ❌ `No capable devices found` — esperado: Ampere decodifica AV1 mas não encoda (só Ada / RTX 40+) |
+| `h264_qsv`, `*_amf` | ❌ ruído da build — o i3-10105**F** não tem iGPU e não há GPU AMD. **Só o NVENC importa nesta máquina.** |
+| Devices dshow | ❌ **nenhum** — `Could not enumerate video devices`, `Could not enumerate audio only devices` |
+
+### ✅ Pipeline de produção validado ponta a ponta (local)
+
+```
+ffmpeg -f lavfi -i ddagrab=output_idx=0:framerate=60 \
+       -c:v h264_nvenc -preset p4 -tune ll -b:v 30M -f mpegts saida.ts
+```
+
+Resultado: **exit 0**, `h264 / 1920x1080 / yuv420p / 60 fps / mpegts`, 5.0 s de
+duração, rodando a **59 fps com speed 0.99x** — ou seja, tempo real folgado.
+Captura e encode acontecem inteiros na GPU.
+
+> O bitrate medido foi só ~1.6 Mbps porque a tela estava parada (desktop estático).
+> Isso **não** é o número de referência — com jogo em movimento vai subir para a
+> faixa de 30–50 Mbps que o plano prevê. Reamostrar durante o Teste 1.
+
+**Isso derruba o maior risco do projeto.** O `ddagrab` captura o desktop e o NVENC
+encoda em tempo real. O que ainda não foi provado é o `ddagrab` capturando **o jogo
+em fullscreen exclusivo**, que é um caso diferente do desktop — continua sendo o
+alvo do Teste 1.
+
+### ⚠️ Achado: ffmpeg 9.0.1 quebra o NVENC com o driver atual
+
+A primeira instalação trouxe a **9.0.1**, e os três encoders NVIDIA falharam:
+
+```
+Driver does not support the required nvenc API version. Required: 13.1 Found: 13.0
+The minimum required Nvidia driver for nvenc is 610.00 or newer
+```
+
+A 9.0.1 foi compilada contra headers de NVENC que exigem driver **≥ 610.00**; o
+driver instalado é o **591.74** (API 13.0). Não é limitação da GPU — é o par
+ffmpeg/driver fora de sincronia.
+
+**Resolvido baixando para a 8.1**, que casa com o driver atual e ainda iguala a
+versão do Mac. A alternativa (atualizar o driver para ≥610.00 e manter a 9.0.1)
+foi descartada por criar divergência de versão entre as duas máquinas sem ganho.
+
+⚠️ **Consequência operacional:** não deixar o `winget upgrade` subir o ffmpeg sem
+antes conferir o driver, ou o NVENC quebra de novo silenciosamente.
 
 ### ⚠️ Achado crítico: o link Ethernet negocia a 100 Mbps, não 1 Gbps
 
@@ -162,12 +208,12 @@ New-NetFirewallRule -DisplayName "lanstream SRT" -Direction Inbound `
 
 ### Próximos passos deste lado
 
-1. `winget install --id=Gyan.FFmpeg -e` (build full — o `essentials` não tem SRT).
-2. Reabrir o terminal e rodar `scripts\win-doctor.ps1` de novo para fechar as 4
-   linhas pendentes.
+1. ~~Instalar o ffmpeg~~ ✅ feito (8.1 full).
+2. ~~Rodar o `win-doctor` para fechar as checagens pendentes~~ ✅ feito.
 3. `winget install --id=ar51an.iperf3` (ou equivalente) para o Teste 2.
-4. Criar a regra de firewall.
-5. Investigar o link de 100 Mbps.
+4. Criar a regra de firewall (precisa de PowerShell como Administrador).
+5. Investigar o link de 100 Mbps — trocar o cabo por Cat5e/Cat6.
+6. Fase 3: instalar um loopback de áudio (VB-CABLE), já que não há nenhum.
 
 ---
 
@@ -218,5 +264,6 @@ Windows, então latência alta só afeta o sync com o microfone (§3.1 do PLANO)
 | **Ethernet do Windows a 100 Mbps** | 🟡 **Novo, e inverte o gargalo.** O I219-V é gigabit mas negociou 100 Mbps — cabo ou porta do roteador. Torna a meta de "≥100 Mbps TCP" (§4) inalcançável e deixa o stream ocupando 30–50% do canal. Trocar o cabo antes do Teste 2. |
 | Mac sem SRT no ffmpeg | 🟢 **Resolvido** — OBS traz libsrt; `srt-live-transmit` cobre o preview. |
 | **MacBook Air M4 é fanless** | 🟡 **Novo.** Decodificar 1080p60 + recodificar pra Twitch + compositar por horas vai esquentar sem ventoinha. O media engine do M4 faz codec em hardware (não é a CPU), mas throttling em live longa é risco real. **Medir na Fase 4:** `sudo powermetrics --samplers smc` durante 30 min de stream. |
-| `ddagrab` não capturar o jogo | 🔴 **Ainda aberto** — é o maior risco do projeto e só o teste no Windows responde. |
+| `ddagrab` não capturar o jogo | 🟡 **Bastante reduzido.** O `ddagrab` foi testado e captura a tela real, e o pipeline `ddagrab → h264_nvenc` roda a 59 fps em tempo real. Falta só o caso que importa de verdade: **jogo em fullscreen exclusivo**, que é diferente do desktop. Alvo do Teste 1. |
 | Áudio loopback no Windows | 🔴 **Confirmado aberto** — o `win-doctor` rodou: a máquina **não tem nenhum device de loopback** (só Realtek onboard + NVIDIA HDMI/DP; o "NVIDIA Virtual Audio Device" é saída HDMI, não captura). A Fase 3 começa do zero, provavelmente com VB-CABLE. |
+| **NVENC x versão do ffmpeg** | 🟡 **Novo.** A 9.0.1 exige driver ≥610.00 e quebra com o 591.74 instalado. Fixado na 8.1. Um `winget upgrade` desavisado reintroduz o problema. |
