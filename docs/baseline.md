@@ -412,8 +412,20 @@ nítido: some completamente até 16 Mbps e cresce rápido depois.
 
 ### 🔴 O que isso significa pro projeto
 
-**O teto utilizável é 16 Mbps, não os 30–60 Mbps que o §3.3 do plano assume.**
-É uma diferença de 2 a 4x, e é o fato mais importante levantado até agora.
+**O teto utilizável é 16 Mbps.** O §3.3 do plano tinha acabado de ser revisto para
+20–25 Mbps HEVC — e mesmo esse alvo, já bem mais modesto que os 30–60 originais,
+**não cabe**: a 20 Mbps a rede perde 1.6% e a 25 Mbps perde 4.4%.
+
+> O raciocínio que levou aos 20–25 Mbps continua correto e é o que salva a
+> situação: como o OBS reencoda pra Twitch a 6–8 Mbps, o stream da LAN só precisa
+> ser transparente o bastante pra não empilhar artefato. Se 20 Mbps já era ~3x o
+> que a Twitch mostra, **15 Mbps ainda é ~2x**. O corte é de transporte, não de
+> qualidade percebida.
+
+> Os comandos rodados foram `iperf3 -c 192.168.0.21 -t 30` e
+> `iperf3 -c 192.168.0.21 -u -b 25M -t 30`, mais uma varredura de 5M a 25M para
+> achar o joelho. O teste de estresse a 60 Mbps foi dispensado: a 25 Mbps a perda
+> já era 44x o alvo, então forçar mais não acrescentaria informação.
 
 Duas anomalias que valem registro:
 
@@ -440,6 +452,18 @@ Duas anomalias que valem registro:
   (exige adaptador USB-C, já que o MacBook Air não tem porta Ethernet) para isolar
   quanto da perda é do Wi-Fi.
 
+### Sobre o ping no sentido inverso (Mac → Windows)
+
+`ping 192.168.0.12` a partir do Mac dá **100% de perda** — mas isso **não é
+problema de rede**. O Firewall do Windows dropa ICMP echo de entrada por padrão.
+A prova de que o caminho está bom: o ARP do Mac resolve o IP para
+`ec:d6:8a:bb:3d:83`, exatamente o MAC do I219-V registrado em §2. O host responde
+em camada 2, está online e alcançável.
+
+Isso não afeta o projeto: o Mac é o **caller** do SRT e conecta na UDP 9000 do
+Windows, que tem regra de allow explícita. Só significa que **`ping` não serve
+como teste de saúde** nesse sentido — use `iperf3` ou o próprio handshake SRT.
+
 ## 5. Teste 3 — dentro do OBS ⏳ pendente
 
 Media Source apontando para
@@ -458,7 +482,7 @@ Windows, então latência alta só afeta o sync com o microfone (§3.1 do PLANO)
 
 | Risco | Status |
 |---|---|
-| **A rede não sustentar o bitrate** | 🔴 **Virou o maior risco do projeto.** Medido no §4: 48.7 Mbps de TCP e perda de pacote em UDP acima de 16 Mbps. O plano assume 30–60 Mbps — é 2 a 4x mais do que a rede entrega. O jitter, esse sim, passa folgado (< 0.6 ms). |
+| **A rede não sustentar o bitrate** | 🔴 **Virou o maior risco do projeto.** Medido no §4: 48.7 Mbps de TCP e perda de pacote em UDP acima de 16 Mbps. Derrubou tanto o alvo original de 30–60 Mbps quanto a revisão para 20–25; o §3.3 hoje adota **15 Mbps HEVC**. O jitter, esse sim, passa folgado (< 0.6 ms). |
 | **Ethernet do Windows a 100 Mbps** | 🟡 **Real, mas não explica tudo.** O I219-V é gigabit e negociou 100 Mbps. Só que a vazão medida foi 48.7 Mbps — metade do que o próprio link de 100 Mbps daria. Há um segundo gargalo no caminho, provavelmente o Wi-Fi do Mac ou o roteador. |
 | **UDP degrada muito antes do TCP** | 🟡 **Novo e contraintuitivo.** TCP sustenta 48.7 Mbps mas UDP já perde pacote a 17 Mbps. O esperado seria o oposto. Aponta para fila/buffer no caminho (provável AP), não para falta de banda. Como SRT é UDP, é o número de 16 Mbps que vale. |
 | **HEVC deixou de ser opcional** | 🟡 **Novo.** Com teto de 16 Mbps, 1080p60 em H.264 fica apertado. O `hevc_nvenc` já está validado e a 15 Mbps rende aproximadamente o que o H.264 renderia a 25. Vira dependência da Fase 2, não melhoria da Fase 7. |
