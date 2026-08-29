@@ -353,14 +353,21 @@ Critério: imagem da tela do Windows aparecendo na janela do ffplay.
 exclusivo**. Capturar o desktop já funciona; capturar um jogo é outra história, e
 é o risco listado no §5 do plano.
 
-## 4. Teste 2 — vazão e jitter ⏳ pendente (falta o Mac)
+## 4. Teste 2 — vazão e jitter 🟡 servidor no ar, falta o cliente
 
 O `iperf3` **já está instalado nos dois lados**, na mesma versão 3.21.
+O **servidor já está rodando no Mac** (`iperf3 -s`, porta 5201, firewall do macOS
+desligado). Falta só disparar o cliente no Windows:
 
-**Mac** (servidor): `iperf3 -s`
-**Windows** (cliente): `iperf3 -c 192.168.0.21 -t 30`
-Depois, o que realmente importa pra streaming — **UDP com jitter e perda**:
-`iperf3 -c 192.168.0.21 -u -b 60M -t 30`
+```powershell
+iperf3 -c 192.168.0.21 -t 30              # TCP: teto do link
+iperf3 -c 192.168.0.21 -u -b 25M -t 30    # UDP no bitrate-alvo real
+iperf3 -c 192.168.0.21 -u -b 60M -t 30    # UDP forçando o link
+```
+
+> O teste de UDP a **25 Mbps** foi acrescentado porque é o bitrate que o projeto
+> vai usar de fato (§3.3 do PLANO, revisto). O de 60 Mbps continua útil como
+> teste de estresse, mas não representa a carga real.
 
 > ⚠️ **Alvo original inalcançável.** O plano pedia "≥ 100 Mbps sustentados no TCP",
 > mas o link do Windows negocia a 100 Mbps (§2), o que dá ~94 Mbps reais de TCP na
@@ -369,6 +376,18 @@ Depois, o que realmente importa pra streaming — **UDP com jitter e perda**:
 > perda < 0.1% e jitter < 5 ms.
 
 Referência já medida: **ping para o Mac em 3 ms**, 4/4 respostas.
+
+### Sobre o ping no sentido inverso (Mac → Windows)
+
+`ping 192.168.0.12` a partir do Mac dá **100% de perda** — mas isso **não é
+problema de rede**. O Firewall do Windows dropa ICMP echo de entrada por padrão.
+A prova de que o caminho está bom: o ARP do Mac resolve o IP para
+`ec:d6:8a:bb:3d:83`, exatamente o MAC do I219-V registrado em §2. O host responde
+em camada 2, está online e alcançável.
+
+Isso não afeta o projeto: o Mac é o **caller** do SRT e conecta na UDP 9000 do
+Windows, que tem regra de allow explícita. Só significa que **`ping` não serve
+como teste de saúde** nesse sentido — use `iperf3` ou o próprio handshake SRT.
 
 ## 5. Teste 3 — dentro do OBS ⏳ pendente
 

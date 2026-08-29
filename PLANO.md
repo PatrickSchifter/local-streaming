@@ -104,8 +104,14 @@ esperando e o OBS reconecta sozinho quando quiser, sem precisar reiniciar o send
 - **H.264** como fallback universal.
 - AV1 só se a GPU do Windows for RTX 40+ *e* o decode no Mac for M3+. Fase 7, opcional.
 
-Bitrate em LAN cabeada não é gargalo: 30–60 Mbps CBR em 1080p60 é confortável e
-deixa a imagem praticamente sem perda visível. O OBS reencoda pra Twitch depois.
+**Bitrate — revisto na Fase 0.** A intuição inicial ("quanto mais, melhor") ignora
+que **o OBS reencoda pra Twitch a 6–8 Mbps**. O stream da LAN não precisa ser
+bonito, precisa ser *transparente o bastante pra que o segundo encode não componha
+artefato em cima do primeiro*. A 1080p60, HEVC a **20 Mbps** já está ~3x acima do
+que a saída da Twitch consegue mostrar — subir pra 50 Mbps não muda um pixel do
+que o espectador vê, só ocupa canal.
+
+Alvo adotado: **20–25 Mbps HEVC** (ou 25–30 H.264), CBR. Ver §5 sobre o link.
 
 ### 3.4 Stack
 
@@ -312,7 +318,9 @@ intervenção nas duas máquinas.
       resumo periódico.
 - [ ] Presets nomeados no config: `quality` (HEVC 1080p60 50Mbps), `balanced`,
       `wifi` (bitrate menor, latência SRT maior, H.264). `lanstream send --preset wifi`.
-- [ ] Testar 1440p e 120fps; achar o teto do link e do decoder do Mac.
+- [ ] ~~Testar 1440p e 120fps~~ — **inviável neste hardware:** o monitor do Windows
+      é 1920x1080 @ 60 Hz e o `ddagrab` captura o que a tela tem. 1080p60 é o teto
+      físico. Reavaliar só se o monitor mudar.
 - [ ] Cores: garantir que não há shift (full vs limited range, BT.709). Testar com
       uma imagem de referência e comparar pixel a pixel entre as duas máquinas.
 - [ ] Avaliar AV1 se o hardware permitir.
@@ -335,8 +343,10 @@ intervenção nas duas máquinas.
 
 | Risco | Impacto | Mitigação |
 |---|---|---|
-| `ddagrab` não captura o jogo (fullscreen exclusivo / anti-cheat) | Alto — quebra a premissa | Testar na Fase 0 com os jogos reais. Fallback: forçar borderless windowed, ou usar OBS no Windows como capturador enviando SRT. |
-| Áudio loopback no Windows exige software de terceiro | Médio | Fase 3 isolada, três opções mapeadas. |
+| `ddagrab` não captura o jogo (fullscreen exclusivo / anti-cheat) | 🟡 Médio | **Fase 0: captura do desktop validada** (58 fps, speed 0.98x, tudo na GPU). Restou só o caso do fullscreen exclusivo. Testar com os jogos reais. Fallback: forçar borderless windowed, ou usar OBS no Windows como capturador enviando SRT. |
+| Áudio loopback no Windows exige software de terceiro | 🔴 Confirmado | **Fase 0:** não existe nenhum device de loopback na máquina (`Win32_SoundDevice` só lista Realtek + NVIDIA HDMI). A Fase 3 começa do zero e exige instalar driver + reboot. |
+| **Link Ethernet do Windows a 100 Mbps** | 🟢 Baixo | **Fase 0:** o I219-V é gigabit mas negociou 100M (cabo ou porta). Parece grave, mas com o alvo revisto de 20–25 Mbps (§3.3) são ~25% do canal, com folga pro ARQ do SRT. **Trocar o cabo é melhoria, não pré-requisito.** Se ficar em 100M, a meta do §4 ("≥100 Mbps TCP") passa a ser "≥90 Mbps", o teto real do link. |
+| **`ddagrab` entrega ~57 fps, não 60** | 🟡 Médio | **Fase 0.** Gargalo é a captura, não o encoder (fonte sintética faz 270 fps). Pode ser artefato da Desktop Duplication com tela quase parada — ela só entrega frame quando há mudança. Remedir com jogo real antes de tratar como problema. |
 | Media Source do OBS instável com SRT longo prazo | Médio | `receive --preview` isola a causa; plano B é ffmpeg→NDI (DistroAV) no Mac. |
 | **MacBook Air M4 é fanless** | 🟡 Médio | **Novo (Fase 0).** Live longa = decode + reencode + composição sem ventoinha. Medir throttling com `powermetrics` na Fase 4; se ocorrer, baixar resolução de saída ou o preset do encoder. |
 | ~~ffmpeg do Mac sem SRT~~ | 🟢 Resolvido | **Fase 0:** fórmula do Homebrew não linka libsrt, mas o OBS traz o próprio `libsrt.dylib` e `srt-live-transmit` cobre o preview. |
