@@ -654,6 +654,76 @@ com **latência SRT de 1.2 s dos dois lados** — `latency=1200000` no ffmpeg
 
 ---
 
+## 4d. 🟡 Experimento do buffer de 1.2 s — metade medida
+
+O experimento que o §4b propôs e o §4c refinou: **20 Mbps com buffer SRT de 1.2 s**
+nos dois lados, para separar "fila limitada, buffer pequeno" de "caminho estreito
+demais".
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\win-test-video.ps1 `
+  -Gpu nvidia -Bitrate 20M -LatencyMs 1200
+```
+
+```bash
+./scripts/mac-preview.sh 192.168.0.12 9000 1200
+```
+
+> Os dois scripts ganharam parâmetro de latência para este teste — antes o valor
+> era fixo em 120 ms nos dois. **Cuidado com a unidade:** o ffmpeg conta em
+> microssegundos e o `srt-live-transmit` em milissegundos. Ambos os scripts agora
+> recebem **milissegundos** e convertem internamente.
+
+### O que o lado do sender mostrou
+
+| Corrida | Duração | fps | speed | Bitrate |
+|---|---|---|---|---|
+| 30M / buffer 120 ms | 13.55 s | 56 | 0.983x | 29.3 Mbps |
+| 15M / buffer 120 ms | 26.95 s | 58 | 0.993x | 15.07 Mbps |
+| **20M / buffer 1200 ms** | **31.93 s** | 🔴 **48** | 🔴 **0.942x** | 17.35 Mbps |
+
+**O sender foi freado.** Nas corridas anteriores ele mantinha 56–58 fps e speed
+~0.99x; com o buffer grande caiu para 48 fps e 0.942x. A queda de bitrate para
+17.35 Mbps é consequência disso, não causa: 48/60 × 20 ≈ 16, bate.
+
+Isso é **contrapressão**. Com buffer de 120 ms a SRT descartava o que atrasava
+(daí os `RCV-DROPPED` do §4b) e o sender seguia livre. Com 1.2 s ela **segura** em
+vez de descartar, o buffer de envio enche, a escrita bloqueia e o freio chega até
+a captura.
+
+### O que isso sugere — e o que ainda não prova
+
+A contrapressão é evidência de que o caminho **realmente não absorve 20 Mbps** no
+sentido Windows→Mac. Reforça a hipótese (1) do §4b (oversubscription) e enfraquece
+a ideia de que era só buffer pequeno: aumentar o buffer não fez o caminho ficar
+mais largo, só trocou *descarte* por *espera*.
+
+> ⚠️ **Mas a metade que decide não foi medida.** Todo o critério do experimento
+> está no receptor: sumiram os `RCV-DROPPED`? sumiu o `error while decoding MB`?
+> o fps de chegada subiu dos ~29 do §4b? Nada disso dá pra ver do lado do Windows.
+>
+> **48 fps chegando limpo seria um resultado bom**, melhor que 29 fps corrompidos.
+> **48 fps chegando corrompido seria um resultado ruim.** Os dois produzem
+> exatamente o mesmo log no sender.
+
+Segunda ressalva: não há confirmação de que o receptor rodou com **1200 ms**. Se o
+Mac usou a versão antiga do `mac-preview.sh` (latência fixa em 120 ms), o teste não
+é o que se pretendia. A SRT negocia a latência efetiva como o **maior** valor entre
+os dois lados, então provavelmente valeu 1200 mesmo assim — mas isso é inferência,
+não observação.
+
+### Para fechar
+
+Rodar de novo com `git pull` feito nos dois lados e **guardar o log do
+`srt-live-transmit`**, que é onde estão os `RCV-DROPPED ... delayed for`. Com esse
+log, o experimento se resolve em um minuto.
+
+Se confirmar que 20 Mbps não passa mesmo com buffer grande, o caminho seguinte não
+é mexer em bitrate nem em buffer: é **pôr o Mac no cabo** (adaptador USB-C) e
+eliminar o downlink do AP, que o §4c isolou como a única perna suspeita.
+
+---
+
 ## 5. Teste 3 — dentro do OBS ⏳ pendente
 
 Media Source apontando para
@@ -672,6 +742,7 @@ Windows, então latência alta só afeta o sync com o microfone (§3.1 do PLANO)
 
 | Risco | Status |
 |---|---|
+| **Contrapressão do SRT freando o sender** | 🟡 **Novo (§4d).** Com buffer de 1.2 s a 20 Mbps o sender caiu de 56–58 fps para **48 fps** e speed 0.942x. Buffer maior trocou descarte por espera, não alargou o caminho. Falta o log do receptor para saber se a imagem chegou limpa. |
 | **A rede não sustentar o bitrate** | 🟡 **Menos grave do que o §4 concluiu, ver §4c.** Com o EEE desligado o TCP faz **68 Mbps** no sentido do stream. O "teto de 16 Mbps" era artefato da rajada do `iperf3 -u`; a SRT se pacea e tem ARQ. Pendente do experimento de buffer de 1.2 s. |
 | **Caminho assimétrico (downlink do AP)** | 🔴 **Novo, e é o gargalo real.** Mac→Windows faz 93.5 Mbps de TCP e 60 Mbps de UDP com 0% de perda; Windows→Mac faz 68 Mbps de TCP e perde 5.5% de UDP a 25 Mbps. A única perna não compartilhada é **roteador → Mac**. Payload menor piora a perda, o que aponta para contenção de airtime. |
 | **EEE ligado na placa do Windows** | 🟢 **Resolvido.** `EEELinkAdvertisement` desligado: TCP passou de 42–57 para 66–69 Mbps e a variância sumiu. Não afetou a negociação em 100M, que é problema separado. |
