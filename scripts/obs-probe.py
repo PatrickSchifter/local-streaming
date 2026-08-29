@@ -1,6 +1,18 @@
-import asyncio, base64, hashlib, json, sys, websockets
+import asyncio, base64, hashlib, json, os, sys, websockets
 
-PW="T1iKpEgZBdQHo3yy"; URL="ws://127.0.0.1:4455"
+# A senha NAO fica no repo. Ordem de busca: variavel de ambiente, depois o
+# proprio config do obs-websocket, que e onde o OBS a gera.
+def _password():
+    import os, json, pathlib
+    if (v := os.environ.get("OBS_WS_PASSWORD")):
+        return v
+    cfg = (pathlib.Path.home() / "Library/Application Support/obs-studio"
+           / "plugin_config/obs-websocket/config.json")
+    if cfg.exists():
+        return json.loads(cfg.read_text()).get("server_password", "")
+    raise SystemExit("senha nao encontrada: defina OBS_WS_PASSWORD")
+
+PW = _password(); URL = os.environ.get("OBS_WS_URL", "ws://127.0.0.1:4455")
 
 async def main():
     async with websockets.connect(URL, max_size=64*1024*1024) as ws:
