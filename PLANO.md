@@ -301,7 +301,8 @@ lento) ou rodar OBS no Windows só como capturador. Descobrir isso na Fase 0, n�
       aqui, e nesse caso o ffmpeg local não é consultado (a resposta dele seria
       pior que nenhuma).
 - [ ] **Rodar o `send` no Windows**, com o OBS do Mac como Media Source. É o
-      critério de saída, e é o que falta.
+      critério de saída, e é o que falta. Protocolo em cinco passos (quatro deles
+      não precisam do Mac) em [`docs/proximos-testes.md`](docs/proximos-testes.md) §F2.
 
 **Saída:** `lanstream send` no Windows + Media Source no Mac = jogo na tela do OBS.
 

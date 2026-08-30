@@ -3,9 +3,12 @@
 Ordem de prioridade. Cada teste diz o comando exato, o que eu faço do lado do Mac,
 e **o que o resultado decide** — nenhum teste aqui é "por garantia".
 
+🔴 **O bloqueante de hoje é o F2** — é o critério de saída da Fase 2, e nada
+depois dele começa antes. O código já está no repositório; falta rodá-lo aqui.
+
 O **F1** era da Fase 1 e **passou em 29/08** — a Fase 1 fechou, registro em
 [`docs/fase1.md`](fase1.md). Os T1–T6 são resquícios da Fase 0: ela fechou sem
-eles, e cada um diz no título se ainda vale a pena. **Não há bloqueante hoje.**
+eles, e cada um diz no título se ainda vale a pena.
 
 Contexto: `docs/baseline.md` §4e. O caminho Windows→Mac entrega ~17 Mbps limpos, o
 buffer alto troca corrupção por queda de framerate, e falta achar a configuração
@@ -39,6 +42,132 @@ que roda a 60 fps dentro desse teto.
 7. **Tela em movimento durante a medição.** Com o desktop parado o `hevc_nvenc` em
    CBR entrega ~1.7 Mbps e a rede nunca é estressada — `-b:v` é teto, não piso.
    Rodada com tela parada não mede nada e o `0 drops` dela é falso positivo (§4f).
+
+---
+
+## F2 — `lanstream send` no Windows 🔴 **bloqueante — é o critério de saída da Fase 2**
+
+O código está escrito e verificado no que não depende do Windows (`docs/fase2.md`
+§5). Três coisas só esta máquina responde: o `ddagrab`, o NVENC, e o **Ctrl+C do
+console do Windows** — o teste daqui foi um SIGINT em POSIX, e o `CTRL_C_EVENT`
+percorre outro caminho.
+
+São cinco passos. Os quatro primeiros levam ~2 minutos e **não precisam de mim do
+outro lado**; só o F2.3 precisa do OBS aberto no Mac.
+
+### Antes: atualizar
+
+```powershell
+cd C:\Users\schif\Projetos\local-streaming
+git pull
+uv pip install -e ".[dev]"    # há módulos novos (encoders.py, sender.py)
+```
+
+> O `lanstream.toml` daí **não precisa mudar**. Se ele tem `preset = "p5"`,
+> continua válido — `p5` é um preset da família NVENC. A diferença é que agora a
+> chave pode ficar vazia e dá no mesmo (`docs/fase2.md` §2).
+
+### F2.1 — o doctor ganhou uma checagem
+
+```powershell
+lanstream doctor
+```
+
+Esperado: **onze** checagens, todas OK, código 0 — duas a mais que as nove do
+registro da Fase 1. Uma veio da separação `host`/`peer` (`host do sender`, commit
+010d763, ainda da Fase 1) e a outra é a da Fase 2: `preset`, que deve dizer
+`preset: -preset p5`.
+
+**Se falhar:** cole a saída. Uma FALHA aqui invalida os passos seguintes.
+
+### F2.2 — o comando montado é o mesmo da Fase 0? (o passo mais barato)
+
+```powershell
+lanstream send --dry-run
+```
+
+Compare a linha impressa com a do `scripts/win-test-video.ps1`. A **única**
+diferença esperada é o `-nostdin`. Confira nominalmente:
+
+- [ ] `-init_hw_device d3d11va`
+- [ ] `-filter_complex ddagrab=0:framerate=60` — sem nada depois do `ddagrab`
+- [ ] `-c:v hevc_nvenc -preset p5 -tune hq -rc cbr`
+- [ ] `-b:v 15M -maxrate 15M -bufsize 15M -g 120 -bf 0`
+- [ ] `-f mpegts "srt://0.0.0.0:9000?mode=listener&latency=1200000"`
+
+**O que o resultado decide:** se algo aqui divergir, o problema é meu, do lado do
+Mac, e não vale queimar uma sessão de teste. Cole a linha e eu conserto.
+
+### F2.3 — a rodada real (esta precisa do Mac)
+
+Tela **em movimento** (regra 7), uTorrent fechado (regra 2). Me avise quando
+estiver escutando (regra 4) — eu conecto o OBS do Mac.
+
+```powershell
+lanstream send
+```
+
+O que anotar:
+
+| O quê | Onde aparece | Referência da Fase 0 |
+|---|---|---|
+| Encoder escolhido | primeira linha ciano do `send` | `hevc_nvenc` |
+| fps **instantâneo** | `Δframe ÷ Δt` entre duas amostras — **não** o `fps=` (regra 6) | 54–58, média 56.2 |
+| `speed` | linha de progresso | ~1.000x |
+| Imagem no OBS | eu confirmo daqui | — |
+
+> ⚠️ **O sender atende UMA conexão e morre** (regra 1). Se eu desconectar o OBS,
+> ele sai com `Error submitting a packet to the muxer: I/O error`. **Isso não é
+> bug da Fase 2** — o `--watch` que resolve isso é da Fase 5. Reinicie e siga.
+
+### F2.4 — Ctrl+C: o que só o Windows responde 🔴
+
+Este é o passo que existe por causa de uma lacuna conhecida, não por
+desencargo. Com o `send` rodando (com ou sem o OBS conectado), aperte **Ctrl+C**
+e observe:
+
+- [ ] Aparece `encerrando o ffmpeg (fechando o mux e a porta SRT)...`
+- [ ] Volta ao prompt em **~1 s** (aqui foram 0.11 s)
+- [ ] **Não** aparece `o ffmpeg não saiu em 5s — mandando terminate`
+
+Se o `terminate` aparecer, o `CTRL_C_EVENT` **não** está chegando no ffmpeg, e a
+correção é minha (provavelmente um `CREATE_NEW_PROCESS_GROUP` implícito do
+Python no Windows). Me diga — é exatamente o que este passo existe para descobrir.
+
+Logo depois, no mesmo terminal:
+
+```powershell
+Get-Process ffmpeg -ErrorAction SilentlyContinue   # esperado: nada
+Get-NetUDPEndpoint -LocalPort 9000 -ErrorAction SilentlyContinue   # esperado: nada
+```
+
+### F2.5 — rodar duas vezes seguidas (a prova de que não sobrou órfão)
+
+É o teste que realmente vale, e custa 20 segundos:
+
+```powershell
+lanstream send      # Ctrl+C depois de uns 5 s
+lanstream send      # tem que subir na hora
+```
+
+Se a segunda subir sem `Address already in use` / `bind failed`, a promessa
+"encerra sem deixar ffmpeg segurando a porta 9000" está cumprida **no SO que
+importa**. Se não subir, o F2.4 mentiu e é lá que está o defeito.
+
+---
+
+### Veredito da fase
+
+| Passo | Precisa do Mac? | Resultado |
+|---|---|---|
+| F2.1 doctor (10 checagens) | não | |
+| F2.2 dry-run == Fase 0 | não | |
+| F2.3 jogo no OBS | **sim** | |
+| F2.4 Ctrl+C limpo | não | |
+| F2.5 duas rodadas seguidas | não | |
+
+Os cinco passando = **Fase 2 fechada**, e a Fase 3 (áudio) começa — que é a que
+exige instalar driver e reiniciar a máquina.
 
 ---
 

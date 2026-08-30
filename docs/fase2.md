@@ -142,7 +142,8 @@ Verificado no Mac (o que não depende de GPU NVIDIA nem de `ddagrab`):
 | `example.toml` == defaults (invariante da Fase 1) | ✅ mantido |
 | `ruff check src/` | ✅ limpo |
 
-**Ainda não verificado — é o critério de saída da fase:**
+**Ainda não verificado — é o critério de saída da fase**
+(o protocolo está em [`proximos-testes.md`](proximos-testes.md) §F2):
 
 - [ ] `lanstream send` rodando no Windows, com o OBS do Mac como Media Source.
       O que a rodada precisa confirmar: o `hevc_nvenc` é mesmo escolhido pela
