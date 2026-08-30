@@ -3,8 +3,9 @@
 Ordem de prioridade. Cada teste diz o comando exato, o que eu faço do lado do Mac,
 e **o que o resultado decide** — nenhum teste aqui é "por garantia".
 
-O **F1** é da Fase 1 e é o único bloqueante hoje. Os T1–T6 são resquícios da
-Fase 0: ela fechou sem eles, e cada um diz no título se ainda vale a pena.
+O **F1** era da Fase 1 e **passou em 29/08** — a Fase 1 fechou, registro em
+[`docs/fase1.md`](fase1.md). Os T1–T6 são resquícios da Fase 0: ela fechou sem
+eles, e cada um diz no título se ainda vale a pena. **Não há bloqueante hoje.**
 
 Contexto: `docs/baseline.md` §4e. O caminho Windows→Mac entrega ~17 Mbps limpos, o
 buffer alto troca corrupção por queda de framerate, e falta achar a configuração
@@ -41,7 +42,18 @@ que roda a 60 fps dentro desse teto.
 
 ---
 
-## F1 — `lanstream doctor` no Windows 🔵 **é o que falta para fechar a Fase 1**
+## F1 — `lanstream doctor` no Windows ✅ **passou em 29/08 — a Fase 1 fechou**
+
+> **Nove checagens, nove OK, código de saída 0.** ffmpeg ainda em 8.1,
+> `hevc_nvenc` escolhido, `ddagrab` e SRT presentes, regra de firewall viva, IP
+> ainda **192.168.0.12**, porta 9000 livre. O diagnóstico automático reproduz em
+> segundos o que a Fase 0 levantou na mão. Saída integral e análise em
+> [`docs/fase1.md`](fase1.md) §1.
+>
+> 🟡 **Um achado:** o `[network] host` tem dois significados que brigam entre si —
+> a linha de alcance quer a *outra* ponta, as URLs querem o *sender*. No Windows
+> não existe valor que sirva aos dois. Não bloqueou a Fase 1; a Fase 2 precisa
+> separar em `host` + `peer` antes de gerar essa URL para valer.
 
 Não mede rede nem qualidade: mede se o diagnóstico automático concorda com o que a
 Fase 0 descobriu na mão. É rápido (segundos) e não precisa de mim do outro lado.
@@ -67,7 +79,7 @@ item pelo caminho difícil:
 | `firewall` | regra "lanstream SRT" existe | a regra foi criada na Fase 0; se sumiu, o comando está na própria mensagem |
 | `porta 9000/UDP` | livre | sai como **AVISO**, não falha: com o sender no ar a porta está ocupada e isso é o esperado. Sem sender, é ffmpeg órfão segurando a porta (§4e) |
 | `IPs locais` | inclui **192.168.0.12** | o IP mudou — atualize `[network] host` do meu lado |
-| `alcance até ...` | precisa de `[network] host` preenchido | crie um `lanstream.toml` com `host = "192.168.0.21"` (o Mac) para exercitar essa linha |
+| `alcance até ...` | precisa de `[network] host` preenchido | ⚠️ a instrução original era pôr `host = "192.168.0.21"` (o Mac) — funciona para o alcance, mas imprime a URL de OBS errada. Ver o achado em `fase1.md` §1 |
 
 O código sai **1** se houver FALHA e **0** caso contrário, então dá para usar como
 preflight antes de subir o sender na Fase 2.

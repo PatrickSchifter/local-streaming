@@ -165,10 +165,12 @@ local-streaming/
 > produção: `hevc_nvenc 15M` + buffer SRT 1.2 s.
 > Achados e números em [`docs/baseline.md`](docs/baseline.md).
 >
-> 🔨 **Fase 1 escrita e validada no Mac** (2026-08-29). `lanstream doctor` e
-> `lanstream config` rodam; a config valida com erro legível. **Falta a metade do
-> Windows** — o critério de saída exige o diagnóstico correto nos dois SOs, e o
-> comando a rodar lá está em [`docs/proximos-testes.md`](docs/proximos-testes.md).
+> ✅ **Fase 1 concluída** (2026-08-29). `lanstream doctor` roda no Mac e no
+> Windows com diagnóstico correto nos dois: nove checagens, nove OK, código de
+> saída 0 no Windows. A config valida com erro legível de uma linha.
+> Registro em [`docs/fase1.md`](docs/fase1.md).
+> Fica um débito para a Fase 2: o `[network] host` acumula dois significados
+> incompatíveis (o sender, para as URLs; a outra ponta, para o alcance).
 
 ## 4. Fases
 
@@ -234,19 +236,32 @@ lento) ou rodar OBS no Windows só como capturador. Descobrir isso na Fase 0, n�
       alcance não é testado por `ping` — o Firewall do Windows dropa ICMP echo e a
       máquina online aparecia como morta (`baseline` §4). A prova de vida é o ARP
       resolver o MAC.
-- [ ] **Rodar o `doctor` no Windows.** Só o lado do Mac foi verificado.
+- [x] **Rodar o `doctor` no Windows.** Rodado em 29/08: nove checagens, nove OK,
+      código de saída 0. ffmpeg ainda 8.1, `hevc_nvenc` escolhido, `ddagrab` e SRT
+      presentes, firewall e IP como a Fase 0 deixou (`docs/fase1.md` §1).
 
 **Saída:** `lanstream doctor` roda no Mac e no Windows e mostra um diagnóstico correto.
 
-> **Onde está:** ✅ Mac — diagnóstico correto, inclusive reconhecendo que a
-> ausência de SRT no ffmpeg do Homebrew é o esperado e não um defeito.
-> ⏳ Windows — o código dos dois SOs foi executado (forçando o ramo), mas num
-> ffmpeg de Mac: prova que não quebra, não que acerta. Falta a rodada real.
+> **Onde está:** ✅ **Batido nos dois lados.** Mac — diagnóstico correto,
+> inclusive reconhecendo que a ausência de SRT no ffmpeg do Homebrew é o esperado
+> e não um defeito. ✅ Windows — a rodada real confirmou o que a execução forçada
+> só sugeria: o ramo Windows não apenas não quebra, ele acerta os nove itens que a
+> Fase 0 levantou na mão.
+>
+> 🟡 **Débito herdado:** `[network] host` significa "o sender" para o bloco de URLs
+> e "a outra ponta" para a checagem de alcance. No Windows nenhum valor serve aos
+> dois — com o IP do Mac o alcance mede de verdade mas a URL de OBS sai errada;
+> com o IP do Windows as URLs saem certas mas o alcance vira ping em si mesmo.
+> Não bloqueou a Fase 1; a Fase 2 gera essa URL para valer (`docs/fase1.md` §1).
 
 ---
 
 ### Fase 2 — Sender: vídeo (Windows)
 
+- [ ] **Separar `[network] host` em `host` + `peer`.** Hoje o campo quer dizer
+      duas coisas que se contradizem no Windows: o sender (que as URLs precisam) e
+      a outra ponta (que o alcance precisa). Débito da Fase 1 (`docs/fase1.md` §1),
+      e é aqui que a URL passa a ser gerada para valer.
 - [ ] `encoders.py`: detectar e escolher encoder por cadeia de fallback
       `hevc_nvenc → h264_nvenc → hevc_amf → h264_amf → hevc_qsv → h264_qsv → libx264`,
       com override no config.
