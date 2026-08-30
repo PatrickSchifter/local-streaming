@@ -24,6 +24,25 @@ que roda a 60 fps dentro desse teto.
    `Error submitting a packet to the muxer: I/O error`. Cada execução atende **uma
    única conexão** (§4e). Se o log parar em `Media path` sem chegar em
    `SRT source connected`, é isso — o sender já morreu.
+
+   > 🟡 **Corolário do F2.3 (30/08): o OBS conecta sozinho, sem ninguém pedir.**
+   > O Media Source tem `reconnect_delay_sec = 2` e `close_when_inactive = false`,
+   > então ele tenta a cada 2 segundos por conta própria. Medido duas vezes: no
+   > flapping `PLAYING`/`ENDED` da tentativa fracassada, e na segunda rodada, em
+   > que o cursor já estava em **22.3 s de mídia** quando fui olhar — o OBS tinha
+   > agarrado o sender ~22 s antes, sem eu disparar nada.
+   >
+   > **Consequência prática: não existe "avise que eu conecto".** Quem sobe o
+   > sender não precisa esperar ninguém; o aviso só serve para começar a medir.
+   >
+   > ❌ **Uma correção, porque a versão anterior deste box errava a causa.** Eu
+   > tinha escrito que o OBS havia *consumido* a conexão única da primeira
+   > tentativa. Não foi isso: o log do Windows mostra o sender morrendo sozinho em
+   > **4.28 s com `DXGI_ERROR_ACCESS_LOST`**, o fullscreen exclusivo do §F2.3-bis
+   > — provavelmente antes de o OBS sequer tentar. Eu inferi uma causa no emissor
+   > a partir de um sintoma no receptor (`ENDED`, cursor parado), quando o log do
+   > emissor tinha a resposta. **A regra que fica: quando as duas pontas discordam,
+   > vale a que tem o log, não a que tem o sintoma.**
 2. **uTorrent e qualquer download/upload pesado fechados.** Não pausados: fechados.
 3. **`git pull` nas duas máquinas antes de começar** — o `win-test-video.ps1` ganhou
    o parâmetro `-Codec`, que os testes abaixo usam.
@@ -208,12 +227,39 @@ deste passo.
 > (jogo 4:3 pré-renderizado de 30 fps). Com o RE2 a 14.5–15.2 Mbps sustentados o
 > `-b:v 15M` finalmente virou piso e teto ao mesmo tempo — e o sender não freou.
 >
-> ⚠️ **O que ainda falta desta rodada:** os contadores do lado do Mac. A imagem
-> foi confirmada visualmente, mas `RCV-DROPPED`, erros de decode e fps recebido
-> **não foram coletados**. O sender viu `drop=0`, o que é bom sinal e não é prova:
-> sender feliz com receptor sofrendo foi exatamente o buraco do §4d. Se o Mac
-> ainda tiver as estatísticas da sessão, valem a pena — se não, ficam para a
-> próxima rodada longa.
+> ✅ **Dívida quitada no mesmo dia: os contadores do lado do Mac.** Foram
+> coletados durante esta rodada, via `obs-websocket` (`GetStats` +
+> `GetMediaInputStatus`), e confirmam o lado do sender em vez de contradizê-lo —
+> o buraco do §4d (sender feliz, receptor sofrendo) **não se repetiu**:
+>
+> | O quê | Medido no Mac | Como |
+> |---|---|---|
+> | Estado da fonte | `PLAYING` contínuo, sem uma queda | `GetMediaInputStatus` a cada 10 s |
+> | **Mídia / relógio de parede** | **0.9997** numa janela de 60 s | `Δcursor ÷ Δrelógio` |
+> | Frames descartados pelo OBS | **0** (`renderSkippedFrames` travado em 11) | `GetStats` |
+> | Render do OBS | 60.00 fps | `ΔrenderTotalFrames ÷ Δt` |
+> | CPU do OBS | 10.7–11.1% | `GetStats` |
+> | Memória | 280–339 MB | `GetStats` |
+> | Imagem | ✅ confirmada **por captura**, não a olho | `GetSourceScreenshot` |
+> | Movimento | ✅ duas capturas com 60 s de intervalo diferem | comparação de bytes |
+>
+> A captura está em [`docs/img/fase2-f23-obs.png`](img/fase2-f23-obs.png): o salão
+> do RPD, cena escura, **sem macrobloco visível** — que é onde 15 Mbps HEVC
+> denunciaria primeiro.
+>
+> **As duas pontas fecham no fim da corrida.** O sender registrou 177.4 s de mídia
+> e Ctrl+C em 0.60 s; a última amostra boa do Mac pegou o cursor em **168.5 s** e a
+> seguinte já achou `ENDED`. A janela de 10 s entre as amostras explica a
+> diferença. O encerramento limpo do Windows aparece do lado de cá como o que
+> deveria ser: o stream simplesmente acaba.
+>
+> ⚠️ **O que continua não coletado, e por quê:** `RCV-DROPPED` e os demais
+> contadores do **libsrt**. O obs-websocket não os expõe — o OBS não publica as
+> estatísticas internas do SRT. Quem as tem é o `srt-live-transmit`, ou seja o
+> `receive --preview` da **Fase 4**. Enquanto ele não existe, "0 frame descartado
+> pelo OBS + mídia/relógio 0.9997" é a melhor prova disponível de que nada se
+> perdeu no caminho, e é uma prova forte: perda de pacote apareceria como cursor
+> atrasando em relação ao relógio.
 >
 > <details>
 > <summary><b>Série temporal completa da rodada</b> — amostra a cada 10 s, fps e bitrate instantâneos</summary>

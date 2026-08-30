@@ -181,7 +181,11 @@ local-streaming/
 > instantâneos, 14.5–15.2 Mbps sustentados, `drop=0` em 10.056 frames**. É a
 > primeira rodada do projeto que de fato estressa o teto de ~17 Mbps do
 > `baseline` §4e — o T1 pedia isso desde 29/08 e nunca tinha conseguido.
-> Registro em [`docs/fase2.md`](docs/fase2.md).
+> Registro em [`docs/fase2.md`](docs/fase2.md). Os contadores do lado do Mac
+> foram coletados na mesma rodada e **confirmam** o sender em vez de contradizê-lo
+> (mídia/relógio 0.9997, zero frame descartado pelo OBS, imagem conferida por
+> captura) — o buraco do `baseline` §4d, sender feliz com receptor sofrendo, não
+> se repetiu.
 >
 > ⛔ **A fase produziu uma restrição:** a captura só funciona com o jogo em
 > **borderless**. Em fullscreen exclusivo o `ddagrab` morre com
@@ -407,6 +411,11 @@ Aqui o projeto para de ser "dois comandos" e vira algo que aguenta uma sessão r
 - [ ] Logs rotativos em arquivo + `--verbose` no console.
 - [ ] `lanstream send --watch`: fica no ar esperando o OBS conectar/reconectar,
       sem precisar reiniciar nada do lado do Windows.
+      **A Fase 2 mostrou que metade disso já existe de graça:** o Media Source do
+      OBS tem `reconnect_delay_sec = 2` e tenta sozinho a cada 2 s — medido, ele
+      agarrou o sender ~22 s antes de alguém pedir (`proximos-testes.md`, regra 1).
+      Com o `--watch` do lado do Windows o par passa a se recuperar **sem ação
+      humana nenhuma**, e não só sem reiniciar o sender.
 - [ ] Auto-start opcional no Windows: gerar a entrada do Task Scheduler /
       atalho na pasta Startup via `lanstream install-autostart`.
 - [ ] (Opcional) Anúncio mDNS/Bonjour do sender, pra não precisar fixar IP.
