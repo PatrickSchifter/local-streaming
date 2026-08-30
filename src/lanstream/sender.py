@@ -64,8 +64,12 @@ class Plan:
 
 
 def _quote(arg: str) -> str:
-    # A URL SRT tem `&`, que tanto o cmd quanto o PowerShell interpretam.
-    return f'"{arg}"' if re.search(r"[\s&?|<>^]", arg) else arg
+    # A URL SRT tem `&`, que tanto o cmd quanto o PowerShell interpretam. Os
+    # colchetes entram pelos rótulos do filtergraph (`[v]`, `-map [v]`): passar
+    # aspas neles é sempre inofensivo, e não passar depende de o PowerShell tratar
+    # `[` como literal em modo de argumento — que é o comportamento, mas esta
+    # linha existe para ser colada às 22h de um sábado, não para apostar nisso.
+    return f'"{arg}"' if re.search(r"[\s&?|<>^\[\]]", arg) else arg
 
 
 def capture_filter(cfg: Config, *, hwdownload: bool, label: str = "") -> str:

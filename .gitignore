@@ -7,3 +7,8 @@ lanstream.toml
 logs/
 *.log
 .DS_Store
+
+# Saídas de teste da Fase 3: a claquete é gerada em cada máquina (F3.4) e os .ts
+# do ensaio local são descartáveis. Nenhum dos dois entra no repo.
+claquete*.mp4
+*.ts

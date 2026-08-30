@@ -80,13 +80,31 @@ vez de presumido. O que falta é o que só existe aí: **um device que exponha o
 > jogo para o jogador não serve, por mais limpa que seja. É por isso que a ordem
 > aqui **não** é a do PLANO original (ver `docs/fase3.md` §1).
 
-### Antes: atualizar
+### A sequência inteira, para conferir depois
+
+Os comandos do Windows, na ordem. Cada um está explicado no passo correspondente
+— esta lista é para saber onde você está, não para colar às cegas.
 
 ```powershell
 cd C:\Users\schif\Projetos\local-streaming
 git pull
-uv pip install -e ".[dev]"    # há um módulo novo (audio.py)
+uv pip install -e ".[dev]"                          # há um módulo novo (audio.py)
+
+lanstream doctor --audio                            # F3.1 — qual device existe?
+#   ... colar o nome em [audio] device e ligar enabled = true ...
+lanstream doctor                                    # F3.2 — o device confere?
+lanstream send --dry-run                            # F3.2 — o comando saiu certo?
+
+lanstream send                                      # F3.3 — sai som no OBS?
+lanstream send --no-audio                           # F3.3 — só se o de cima falhar
+
+python scripts\av-sync.py claquete claquete.mp4 --segundos 1260   # F3.4
+lanstream send                                      # F3.4 — com a claquete tocando
+lanstream send                                      # F3.5 — com o jogo, borderless
 ```
+
+O que **eu** faço daqui: conectar o OBS (ele reconecta sozinho), gravar 20 min no
+F3.4, e rodar a medição na gravação. O F3.1 e o F3.2 não precisam de mim.
 
 ### F3.1 — o device: comece pelo que é de graça ⏱️ 2 min
 
@@ -158,17 +176,20 @@ regras acima). **O que decide:**
 
 ### F3.4 — o número: A/V sync medido ⏱️ 10 min, precisa do Mac
 
-Aqui a claquete entra. **No Mac**, uma vez só:
+Aqui entra a claquete: tela preta que pisca branco por 100 ms a cada 5 s, com um
+bipe de 1 kHz nos mesmos 100 ms. **Ela nasce aí mesmo** — nada para copiar entre
+as máquinas, e o arquivo sai do mesmo código que faz a medição:
 
-```bash
-python scripts/av-sync.py claquete /tmp/claquete.mp4 --segundos 1260
-python scripts/av-sync.py medir /tmp/claquete.mp4     # o VIÉS do método, ~+12 ms
+```powershell
+python scripts\av-sync.py claquete claquete.mp4 --segundos 1260
 ```
 
-Copie o `claquete.mp4` para o Windows (pen drive, `scp`, o que for) e:
+> Usa só o ffmpeg do PATH, o mesmo que o `doctor` já achou. 21 minutos de vídeo,
+> quase tudo preto: o arquivo dá poucos MB.
 
-1. **Windows:** toque o `claquete.mp4` em **tela cheia**, com o som saindo pelo
-   device que o F3.1 escolheu. Rode `lanstream send`.
+1. **Windows:** toque o `claquete.mp4` em **tela cheia** (qualquer player), com o
+   som saindo pelo device que o F3.1 escolheu — se você habilitou a Mixagem
+   estéreo, é a saída normal. Rode `lanstream send`.
 2. **Mac:** com o Media Source pegando a imagem, **OBS → Iniciar Gravação**.
    Deixe correr **20 minutos** — é o critério de saída da fase, e é o tempo que
    uma deriva precisa para aparecer.
