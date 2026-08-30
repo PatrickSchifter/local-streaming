@@ -36,7 +36,18 @@ class ConfigError(Exception):
 
 @dataclass
 class NetworkConfig:
+    # O IP do SENDER (o Windows), sempre — nas duas máquinas. É deste campo que
+    # sai a URL de caller, e o caller só tem um destino possível. Preencher com o
+    # IP local no Windows não é redundância: é o que o doctor confere para
+    # detectar que o IP mudou antes de o Mac descobrir isso no meio da live.
     host: str = ""
+
+    # A OUTRA ponta, do ponto de vista de quem roda. Só diagnóstico: é o alvo do
+    # teste de alcance. No Mac não precisa (a outra ponta já é o `host`); no
+    # Windows é o IP do Mac. Separado do `host` porque um campo com dois
+    # significados não tem valor correto no Windows — achado da Fase 1
+    # (`docs/fase1.md` §1).
+    peer: str = ""
     port: int = 9000
     # Milissegundos. O ffmpeg e o OBS querem microssegundos na URL — a conversão
     # mora em url_for_ffmpeg()/url_for_srt_live_transmit(), num lugar só.

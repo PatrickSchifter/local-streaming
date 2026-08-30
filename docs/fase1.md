@@ -126,9 +126,37 @@ para valer, e aí o ambíguo vira defeito.
 
 **Encaminhamento:** separar em dois campos — `host` continua sendo o sender (o que
 as URLs precisam) e um novo `peer` aponta para a outra ponta (o que o alcance
-precisa). Cada lado preenche o do outro. Enquanto isso não existe, o
-`lanstream.toml` do Windows deve ter `host = "192.168.0.12"`, que é o significado
-documentado; a linha de alcance fica sem valor nessa máquina.
+precisa). Cada lado preenche o do outro.
+
+### ✅ Resolvido no mesmo dia — e o campo virou uma checagem a mais
+
+O `[network] peer` existe. `host` tem agora **um** significado, igual nas duas
+máquinas: o IP do Windows, que é para onde o OBS conecta. O alvo do teste de
+alcance passou a ser escolhido pelo papel — no Mac é o `host`, no Windows é o
+`peer`, e sem `peer` o teste simplesmente não aparece (não faz falta: quem inicia
+a conexão é o Mac).
+
+O que não estava previsto: **preencher `host` com o próprio IP no Windows deixou de
+ser redundância e virou detector de troca de IP.** O doctor agora confere que o
+`host` é mesmo um endereço desta máquina, e cada lado erra de um jeito diferente:
+
+| Situação | Antes | Agora |
+|---|---|---|
+| Windows com `host` de um IP que o DHCP já trocou | passava calado | `FALHA host do sender: 192.168.0.99 não é um IP desta máquina` |
+| Mac com `host` apontando para si mesmo (o engano que a ambiguidade induzia) | `OK alcance` — ping em si mesmo, verde e inútil | `FALHA host do sender: 192.168.0.21 é esta máquina` |
+| Windows com `host` próprio + `peer` do Mac | impossível expressar | `OK` nos dois, alcance medindo a outra ponta de verdade |
+
+Ou seja: o campo ambíguo escondia um modo de falha real — o IP do Windows mudar
+entre uma sessão e outra — que só apareceria com o OBS na tela preta. As quatro
+combinações foram exercitadas antes do commit.
+
+**No `lanstream.toml` do Windows:**
+
+```toml
+[network]
+host = "192.168.0.12"   # esta máquina — é onde o OBS conecta
+peer = "192.168.0.21"   # o Mac, só para o teste de alcance
+```
 
 ### O que isto fecha
 
@@ -138,6 +166,7 @@ documentado; a linha de alcance fica sem valor nessa máquina.
   para encadear antes de subir o sender.
 - ✅ O ambiente do Windows continua exatamente como a Fase 0 o deixou — mesma
   versão de ffmpeg, mesmo IP, mesma regra de firewall.
-- 🟡 Aberto: a ambiguidade do `[network] host`, acima. Resolver na Fase 2.
+- ✅ A ambiguidade do `[network] host` foi resolvida no mesmo dia (acima), e a
+  correção rendeu uma checagem que não existia: troca de IP do sender.
 - 🟡 Sem exercício: o ramo de AVISO da porta ocupada. Sai de graça na Fase 2, na
   primeira vez que o doctor rodar com o sender no ar.

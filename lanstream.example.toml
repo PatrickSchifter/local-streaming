@@ -7,10 +7,23 @@
 # Os números vêm da Fase 0 — ver docs/baseline.md. Não são chute.
 
 [network]
-# IP do Windows (o sender). O Windows escuta em 0.0.0.0, então lá esta chave só
-# serve para o doctor imprimir a URL que o Mac deve usar. No Mac ela é obrigatória
-# para `receive`. Vazio = "descobrir na hora".
+# IP do WINDOWS (o sender) — o mesmo valor nas duas máquinas. É o endereço em que
+# o OBS conecta, e o caller só tem um destino possível.
+#
+# No Windows preencher com o próprio IP não é redundância: é assim que o doctor
+# percebe que o DHCP mudou o endereço, antes de o Mac descobrir isso no meio da
+# live. Um `host` que não é nenhum IP da máquina local vira FALHA lá; um `host`
+# que é a própria máquina vira FALHA no Mac.
 host = ""
+
+# A OUTRA ponta, vista de quem roda. Só diagnóstico: é o alvo do teste de alcance
+# do doctor, e nada mais depende dele. No Mac não precisa (a outra ponta já é o
+# `host`); no Windows é o IP do Mac.
+#
+# Existe porque tentar usar um campo só para as duas coisas não funciona: no
+# Windows o valor que faz a URL sair certa é o que torna o teste de alcance um
+# ping em si mesmo. Achado da Fase 1, `docs/fase1.md` §1.
+peer = ""
 
 # Porta UDP do SRT. Precisa estar liberada no firewall do Windows:
 #   New-NetFirewallRule -DisplayName "lanstream SRT" -Direction Inbound `

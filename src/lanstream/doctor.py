@@ -335,6 +335,39 @@ def check_firewall(report: Report, cfg: Config) -> None:
         )
 
 
+def _check_host_identity(report: Report, host: str, ips: list[str]) -> bool:
+    """O `host` é sempre o IP do sender. Cada lado erra de um jeito diferente.
+
+    No Windows ele deve ser um IP desta máquina — se não for, o IP mudou e a URL
+    que o Mac usa aponta para o vazio, coisa que só apareceria no meio da live.
+    No Mac é o oposto: apontar para si mesmo é o engano, e é exatamente o que a
+    ambiguidade do campo induzia (`docs/fase1.md` §1).
+    """
+    if ff.IS_WINDOWS:
+        if host in ips:
+            report.add(Level.OK, "host do sender", f"{host} — é esta máquina, como deve ser")
+            return True
+        else:
+            report.add(
+                Level.FAIL,
+                "host do sender",
+                f"{host} não é um IP desta máquina ({', '.join(ips) or 'nenhum'})",
+                "O IP mudou. Atualize [network] host aqui e no Mac — senão o OBS vai\n"
+                "conectar num endereço que não existe mais.",
+            )
+            return False
+    elif host in ips:
+        report.add(
+            Level.FAIL,
+            "host do sender",
+            f"{host} é esta máquina",
+            "[network] host é sempre o IP do WINDOWS, também aqui — é para lá que\n"
+            "o OBS conecta. Para o alvo do teste de alcance existe o [network] peer.",
+        )
+        return False
+    return True
+
+
 def check_network(report: Report, cfg: Config) -> None:
     ips = local_ips()
     if ips:
@@ -367,14 +400,24 @@ def check_network(report: Report, cfg: Config) -> None:
             "host do sender",
             "não configurado",
             "Preencha [network] host no lanstream.toml com o IP do Windows —\n"
-            "é o que o Mac usa para conectar.",
+            "é o endereço em que o OBS conecta, e vale nas duas máquinas.",
         )
+    elif not _check_host_identity(report, host, ips) and not ff.IS_WINDOWS:
+        # Host errado no Mac: medir alcance contra ele seria um ping em si mesmo,
+        # que passa de graça e contradiz visualmente a falha logo acima.
         return
 
-    up, detail = reachable(host)
+    # O alcance mede a OUTRA ponta. No Mac ela é o sender; no Windows, o `peer`.
+    # Sem peer o teste simplesmente não existe do lado do Windows — e não faz
+    # falta, porque quem inicia a conexão é o Mac. Medir daqui é conveniência.
+    target = cfg.network.peer if ff.IS_WINDOWS else host
+    if not target:
+        return
+
+    up, detail = reachable(target)
     report.add(
         Level.OK if up else Level.FAIL,
-        f"alcance até {host}",
+        f"alcance até {target}",
         detail,
         "O Firewall do Windows dropa ICMP por padrão (baseline §4); ARP é a prova de vida.\n"
         "O que decide mesmo é o handshake SRT."
@@ -424,6 +467,8 @@ def run(cfg: Config) -> int:
         typer.echo("  (o latency muda de unidade entre os dois — µs no OBS, ms no slt)")
     else:
         typer.echo("  as URLs do lado do Mac precisam de [network] host preenchido")
+    if ff.IS_WINDOWS and not cfg.network.peer:
+        typer.echo("  (opcional: [network] peer = IP do Mac faz o doctor medir o alcance daqui)")
 
     typer.echo("")
     if report.failed:

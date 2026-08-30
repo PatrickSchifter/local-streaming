@@ -169,8 +169,10 @@ local-streaming/
 > Windows com diagnóstico correto nos dois: nove checagens, nove OK, código de
 > saída 0 no Windows. A config valida com erro legível de uma linha.
 > Registro em [`docs/fase1.md`](docs/fase1.md).
-> Fica um débito para a Fase 2: o `[network] host` acumula dois significados
-> incompatíveis (o sender, para as URLs; a outra ponta, para o alcance).
+> O débito do `[network] host` foi quitado no mesmo dia: `host` (o sender, que as
+> URLs precisam) e `peer` (a outra ponta, que o alcance precisa) são campos
+> separados, e a correção rendeu uma checagem nova — o doctor agora percebe que o
+> IP do sender mudou (`docs/fase1.md` §1).
 
 ## 4. Fases
 
@@ -248,20 +250,20 @@ lento) ou rodar OBS no Windows só como capturador. Descobrir isso na Fase 0, n�
 > só sugeria: o ramo Windows não apenas não quebra, ele acerta os nove itens que a
 > Fase 0 levantou na mão.
 >
-> 🟡 **Débito herdado:** `[network] host` significa "o sender" para o bloco de URLs
-> e "a outra ponta" para a checagem de alcance. No Windows nenhum valor serve aos
-> dois — com o IP do Mac o alcance mede de verdade mas a URL de OBS sai errada;
-> com o IP do Windows as URLs saem certas mas o alcance vira ping em si mesmo.
-> Não bloqueou a Fase 1; a Fase 2 gera essa URL para valer (`docs/fase1.md` §1).
+> ✅ **Débito quitado antes de começar:** o `[network] host` foi separado em `host`
+> (o sender — é o que as URLs precisam, e vale igual nas duas máquinas) e `peer`
+> (a outra ponta, só para o teste de alcance). De quebra, conferir que o `host` é
+> mesmo um IP da máquina local virou detector de troca de IP pelo DHCP, que antes
+> só apareceria com o OBS na tela preta (`docs/fase1.md` §1).
 
 ---
 
 ### Fase 2 — Sender: vídeo (Windows)
 
-- [ ] **Separar `[network] host` em `host` + `peer`.** Hoje o campo quer dizer
-      duas coisas que se contradizem no Windows: o sender (que as URLs precisam) e
-      a outra ponta (que o alcance precisa). Débito da Fase 1 (`docs/fase1.md` §1),
-      e é aqui que a URL passa a ser gerada para valer.
+- [x] **Separar `[network] host` em `host` + `peer`.** Feito antes do resto: a URL
+      passa a ser gerada para valer aqui, e um campo ambíguo alimentando-a era
+      defeito esperando acontecer. As quatro combinações de `host`/`peer` nos dois
+      SOs foram exercitadas (`docs/fase1.md` §1).
 - [ ] `encoders.py`: detectar e escolher encoder por cadeia de fallback
       `hevc_nvenc → h264_nvenc → hevc_amf → h264_amf → hevc_qsv → h264_qsv → libx264`,
       com override no config.
