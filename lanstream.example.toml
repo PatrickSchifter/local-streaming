@@ -68,15 +68,31 @@ monitor = 0
 preset = ""
 
 [audio]
-# Fase 3. A máquina do Windows não tem nenhum device de loopback (baseline §2),
-# então isto continua desligado até um VB-CABLE / virtual-audio-capturer existir.
+# Fase 3. Desligado enquanto não houver um device de captura no Windows — a
+# máquina não tinha nenhum quando o baseline §7 olhou. Com `false`, o comando
+# montado é byte a byte o da Fase 2; é isso que faz do `send --no-audio` um
+# bisect confiável quando algo quebrar.
 enabled = false
 
-# Nome do device DirectShow, como aparece em:
-#   ffmpeg -list_devices true -f dshow -i dummy
+# Nome do device DirectShow, EXATO — o dshow abre pelo nome literal, então caixa
+# e acento contam. Para descobrir qual:
+#   lanstream doctor --audio     (lista e classifica em loopback/microfone)
+# Sem o prefixo `audio=`: quem o põe é o lanstream.
 device = ""
 
 bitrate = "160k"
+
+# Buffer do device dshow, em milissegundos. O default do ffmpeg é o do device,
+# "tipicamente algum múltiplo de 500 ms" — meio segundo de áudio atrasado seria
+# a dessincronia inteira, de graça. 50 ms é baixo o bastante para não dominar o
+# offset e alto o bastante para não picotar.
+buffer_ms = 50
+
+# Correção de sincronismo. POSITIVO ATRASA O ÁUDIO (medido, não presumido —
+# docs/fase3.md §3). Não se adivinha: meça com
+#   python scripts/av-sync.py medir <gravacao-do-obs.mkv>
+# que imprime esta linha pronta. Abaixo de 40 ms não mexa: é o piso do método.
+offset_ms = 0
 
 [paths]
 # Deixe vazio para procurar no PATH. Preencha só se houver mais de um ffmpeg

@@ -3,9 +3,11 @@
 Ordem de prioridade. Cada teste diz o comando exato, o que eu faço do lado do Mac,
 e **o que o resultado decide** — nenhum teste aqui é "por garantia".
 
-🟡 **O F2 rodou em 30/08: quatro dos cinco passos passaram.** Falta só o
-**F2.3**, o único que precisa do Mac do outro lado — é o que segura o critério de
-saída da Fase 2. Resultado passo a passo abaixo.
+🔴 **A vez é do F3 — o áudio.** O **F2 fechou em 30/08** com os cinco passos, e
+com ele a Fase 2 (registro abaixo e em [`docs/fase2.md`](fase2.md)). O F3 começa
+com um bloqueio de hardware: esta máquina **não tem device de captura de áudio
+nenhum** (`baseline.md` §7), e o primeiro passo custa dois minutos e pode
+resolver isso sozinho.
 
 O **F1** era da Fase 1 e **passou em 29/08** — a Fase 1 fechou, registro em
 [`docs/fase1.md`](fase1.md). Os T1–T6 são resquícios da Fase 0: ela fechou sem
@@ -62,6 +64,150 @@ que roda a 60 fps dentro desse teto.
 7. **Tela em movimento durante a medição.** Com o desktop parado o `hevc_nvenc` em
    CBR entrega ~1.7 Mbps e a rede nunca é estressada — `-b:v` é teto, não piso.
    Rodada com tela parada não mede nada e o `0 drops` dela é falso positivo (§4f).
+
+---
+
+## F3 — áudio do jogo 🔴 **é o próximo, e o passo 1 pode encerrar a fase**
+
+Tudo o que não depende da máquina do Windows já está feito e medido
+(`docs/fase3.md`): o comando com as duas trilhas foi montado, rodado num ffmpeg
+de verdade e verificado com `ffprobe`, e o sinal do `-itsoffset` foi medido em
+vez de presumido. O que falta é o que só existe aí: **um device que exponha o
+áudio do sistema como captura**.
+
+> **A restrição que ordena as tentativas:** o áudio precisa continuar saindo pela
+> caixa de som — quem está jogando está sentado nela. Uma captura que emudece o
+> jogo para o jogador não serve, por mais limpa que seja. É por isso que a ordem
+> aqui **não** é a do PLANO original (ver `docs/fase3.md` §1).
+
+### Antes: atualizar
+
+```powershell
+cd C:\Users\schif\Projetos\local-streaming
+git pull
+uv pip install -e ".[dev]"    # há um módulo novo (audio.py)
+```
+
+### F3.1 — o device: comece pelo que é de graça ⏱️ 2 min
+
+O `Win32_SoundDevice` que o baseline consultou lista placas, não entradas — e o
+Windows esconde a Mixagem estéreo **desabilitada**, não ausente. Então "esta
+máquina não tem loopback" ainda pode ser falso. Antes de instalar qualquer driver:
+
+1. `Win + R` → `mmsys.cpl` → aba **Gravação**
+2. botão direito na lista → **Mostrar dispositivos desativados**
+3. se aparecer **Mixagem estéreo** (ou *Stereo Mix*): botão direito → **Ativar**
+
+```powershell
+lanstream doctor --audio
+```
+
+**O que decide:**
+- **Apareceu um device `loopback`** → copie o nome exato, vá para o F3.2. A fase
+  ficou de graça.
+- **Só apareceu microfone, ou nada** → é instalação de driver, com reboot. Ordem
+  em `docs/fase3.md` §1: VB-CABLE (lembrando de marcar **Ouvir este dispositivo**
+  em `Gravação > CABLE Output > Propriedades > Ouvir`, senão o jogo emudece para
+  quem joga), e VoiceMeeter se a latência do "Ouvir" atrapalhar. Depois de
+  instalar, volte a este passo.
+
+> ⚠️ **O `doctor --audio` classifica pelo NOME**, e isso é palpite: `loopback`,
+> `microfone` ou `desconhecido`. Quem confirma é o ouvido, no F3.3.
+
+### F3.2 — ligar o áudio na config ⏱️ 1 min
+
+```toml
+[audio]
+enabled = true
+device = "Mixagem estéreo (Realtek(R) Audio)"   # o nome EXATO do F3.1
+```
+
+```powershell
+lanstream doctor          # agora com as checagens de áudio
+lanstream send --dry-run
+```
+
+**Esperado:** `[ OK ] device de áudio: "..." (loopback)` e, no comando, o bloco
+`-f dshow -audio_buffer_size 50 -thread_queue_size 1024 -i "audio=..."` com
+`-map [v] -map 0:a` e `-c:a aac -b:a 160k -ar 48000 -ac 2`.
+
+**O que decide:** um nome que erra por caixa ou acento é FALHA aqui, com o nome
+certo impresso para copiar — o dshow abre o device pelo nome literal. Corrigir
+custa uma linha; descobrir isso com o `send` no ar custa a rodada.
+
+### F3.3 — o áudio existe? ⏱️ 3 min, precisa do Mac
+
+Toque **qualquer coisa** no Windows (YouTube serve) e:
+
+```powershell
+lanstream send
+```
+
+No Mac, o Media Source já conectado (ele reconecta sozinho a cada 2 s — ver as
+regras acima). **O que decide:**
+
+- **Sai som no OBS** → siga para o F3.4.
+- **Sai som, mas é o microfone / o ambiente do quarto** → o device é de captura,
+  não de loopback. Volte ao F3.1.
+- **Não sai som nenhum, e o vídeo continua bom** → o device não está entregando.
+  Confira o nível dele em `mmsys.cpl > Gravação` enquanto o áudio toca: se a
+  barrinha não mexe, o problema é o Windows, não o ffmpeg.
+- **O `send` nem sobe** → rode `lanstream send --no-audio`. Se com isso funciona,
+  o problema é o device (o comando sem áudio é **byte a byte** o da Fase 2). Se
+  não funciona nem assim, é regressão do vídeo, e aí o áudio não tem nada com isso.
+
+### F3.4 — o número: A/V sync medido ⏱️ 10 min, precisa do Mac
+
+Aqui a claquete entra. **No Mac**, uma vez só:
+
+```bash
+python scripts/av-sync.py claquete /tmp/claquete.mp4 --segundos 1260
+python scripts/av-sync.py medir /tmp/claquete.mp4     # o VIÉS do método, ~+12 ms
+```
+
+Copie o `claquete.mp4` para o Windows (pen drive, `scp`, o que for) e:
+
+1. **Windows:** toque o `claquete.mp4` em **tela cheia**, com o som saindo pelo
+   device que o F3.1 escolheu. Rode `lanstream send`.
+2. **Mac:** com o Media Source pegando a imagem, **OBS → Iniciar Gravação**.
+   Deixe correr **20 minutos** — é o critério de saída da fase, e é o tempo que
+   uma deriva precisa para aparecer.
+3. **Mac:** parar a gravação, parar o `send` com Ctrl+C, e medir:
+
+```bash
+python scripts/av-sync.py medir ~/Movies/2026-08-31\ 20-00-00.mkv --offset-atual 0
+```
+
+**O que decide:**
+
+| Resultado | Significa | Ação |
+|---|---|---|
+| mediana < 40 ms e deriva ~0 | sincronizado dentro do piso do método | **fase fechada**, não mexa no offset |
+| mediana estável, deriva ~0 | offset constante | cole a linha `[audio] offset_ms = N` que o script imprime, e refaça o F3.4 para confirmar |
+| deriva > 100 ms/hora | dois relógios correndo diferente | `-itsoffset` **não** resolve; é `aresample=async=1`, e vira item da Fase 7 com esta medição junto |
+| nenhum par encontrado | a claquete não estava na cena, ou tinha overlay por cima | refazer com a fonte em tela cheia |
+
+> **Compare com o viés, não com zero.** O próprio arquivo de claquete mede `+12 ms`
+> porque `blackdetect` só responde no quadro seguinte e `silencedetect` decide por
+> janelas de ~21 ms. O que interessa é quanto a gravação se afasta desse número.
+
+### F3.5 — a rodada real ⏱️ o resto da sessão
+
+Jogo em **borderless** (a restrição do §F2.3-bis vale igual aqui), áudio ligado,
+20 minutos. **O que decide:** fps e bitrate não podem piorar em relação ao F2.3
+(57.1 fps instantâneos, 14.5–15.2 Mbps, `drop=0`) — o AAC custa 160 kbps e não
+deveria mexer em nada, mas é o encoder de vídeo dividindo máquina com uma segunda
+captura, e isso se mede em vez de se supor.
+
+### Tabela para preencher
+
+| Passo | Resultado |
+|---|---|
+| F3.1 device encontrado | |
+| F3.2 doctor OK | |
+| F3.3 som no OBS | |
+| F3.4 mediana / deriva | |
+| F3.5 fps / bitrate / drops | |
 
 ---
 

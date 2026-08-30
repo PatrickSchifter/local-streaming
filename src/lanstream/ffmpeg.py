@@ -120,6 +120,17 @@ class FFmpegInfo:
     version: str
     build: str
 
+    def raw(self, *args: str) -> str:
+        """Saída crua (stdout+stderr) de uma consulta a este ffmpeg.
+
+        Existe para as consultas que não cabem num `set[str]` — hoje só a
+        listagem de devices dshow, que precisa da ordem e das linhas de "nome
+        alternativo" para ser lida direito. Não é cacheada: a lista de devices
+        muda quando alguém pluga um cabo, e o `doctor --audio` é rodado
+        justamente depois de instalar um driver novo.
+        """
+        return _run(self.path, *args)
+
     @functools.cached_property
     def encoders(self) -> set[str]:
         return _parse_listing(_run(self.path, "-encoders"))

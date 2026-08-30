@@ -127,13 +127,50 @@ class AudioConfig:
     device: str = ""
     bitrate: str | int = "160k"
 
+    # Buffer do device dshow, em milissegundos. O default do ffmpeg é o do
+    # device — "tipicamente algum múltiplo de 500 ms", diz a documentação —, e
+    # meio segundo de áudio atrasado é o A/V sync inteiro da Fase 3 perdido de
+    # graça. 50 ms é o valor conservador que a prática recomenda: baixo o
+    # suficiente para não dominar o offset, alto o suficiente para não picotar.
+    buffer_ms: int = 50
+
+    # Correção de sincronismo, em milissegundos. POSITIVO ATRASA O ÁUDIO. Vira
+    # `-itsoffset` na entrada do dshow. O valor não se adivinha: mede-se com o
+    # scripts/av-sync.py, que imprime a linha pronta para colar aqui.
+    offset_ms: int = 0
+
     def validate(self) -> None:
         parse_bitrate(self.bitrate, "[audio] bitrate")
         if self.enabled and not self.device:
             raise ConfigError(
                 "[audio] enabled = true mas device está vazio.\n"
                 "  Liste os devices no Windows com:\n"
-                "    ffmpeg -list_devices true -f dshow -i dummy"
+                "    lanstream doctor --audio"
+            )
+        # O `audio=` é do ffmpeg, não do nome: com ele o comando sairia
+        # `-i audio=audio=CABLE Output` e o dshow diria só "I/O error", que não
+        # aponta para nada. É engano provável — a documentação do ffmpeg mostra
+        # o device sempre com o prefixo colado.
+        if self.device.startswith(("audio=", "video=")):
+            prefix, _, rest = self.device.partition("=")
+            raise ConfigError(
+                f"[audio] device = {self.device!r} — tire o '{prefix}=', é o lanstream que o põe.\n"
+                f'  device = "{rest}"'
+            )
+        if '"' in self.device:
+            raise ConfigError(
+                f"[audio] device = {self.device!r} — aspas dentro do nome não passam pelo shell.\n"
+                "  Use o nome como o `lanstream doctor --audio` imprime."
+            )
+        if not 10 <= self.buffer_ms <= 1000:
+            raise ConfigError(
+                f"[audio] buffer_ms = {self.buffer_ms} — esperado entre 10 e 1000 ms.\n"
+                "  Abaixo de 10 o device picota; acima de 1000 o áudio atrasa mais que o SRT."
+            )
+        if not -2000 <= self.offset_ms <= 2000:
+            raise ConfigError(
+                f"[audio] offset_ms = {self.offset_ms} — esperado entre -2000 e 2000 ms.\n"
+                "  Um valor maior que isso não é dessincronia, é outro defeito."
             )
 
 

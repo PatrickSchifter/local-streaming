@@ -21,6 +21,7 @@ from enum import Enum
 
 import typer
 
+from . import audio as aud
 from . import encoders as enc
 from . import ffmpeg as ff
 from .config import Config
@@ -317,6 +318,126 @@ def check_srt(report: Report, info: ff.FFmpegInfo, cfg: Config) -> None:
         report.add(Level.WARN, "ffplay", "não encontrado", "brew install ffmpeg")
 
 
+def check_audio(report: Report, info: ff.FFmpegInfo, cfg: Config) -> None:
+    """Só no Windows: o device dshow existe e o ffmpeg sabe fazer AAC.
+
+    Com o áudio desligado a checagem não some — vira uma linha dizendo isso. "Por
+    que não tem som?" é uma pergunta que se faz no meio da live, e a resposta mais
+    provável é `enabled = false`; um doctor que se cala sobre o áudio manda
+    procurar no lugar errado.
+    """
+    if not cfg.audio.enabled:
+        report.add(Level.OK, "áudio", "desligado ([audio] enabled = false)")
+        return
+
+    if "aac" not in info.encoders:
+        report.add(
+            Level.FAIL,
+            "encoder de áudio",
+            "aac ausente",
+            "Build errado do ffmpeg — o AAC nativo vem em qualquer full build.",
+        )
+
+    devices = _ask(report, "devices dshow", lambda: aud.list_devices(info))
+    if devices is None:
+        return
+    audios = aud.audio_devices(devices)
+    if not audios:
+        report.add(
+            Level.FAIL,
+            "devices dshow",
+            "nenhum device de áudio",
+            "É o estado que o baseline §7 registrou nesta máquina: sem Stereo Mix e\n"
+            "sem cabo virtual, não há o que capturar. Ver docs/fase3.md §1 para a\n"
+            "ordem de tentativa (Stereo Mix -> VB-CABLE -> VoiceMeeter).",
+        )
+        return
+
+    wanted = cfg.audio.device
+    found = aud.find(audios, wanted)
+    if found is None:
+        report.add(
+            Level.FAIL,
+            "device de áudio",
+            f"{wanted!r} não está na lista",
+            "Devices de áudio deste ffmpeg (loopback primeiro):\n"
+            + "\n".join(f'  {d.role:12} "{d.name}"' for d in audios)
+            + "\nCopie o nome exato para [audio] device. Lista completa: lanstream doctor --audio",
+        )
+        return
+    if found.name != wanted:
+        # O dshow abre o device pelo nome literal: quase certo não é certo.
+        report.add(
+            Level.FAIL,
+            "device de áudio",
+            f"{wanted!r} difere do nome real por caixa ou acento",
+            f'  device = "{found.name}"',
+        )
+        return
+
+    report.add(
+        Level.OK,
+        "device de áudio",
+        f'"{found.name}" ({found.role})',
+        ""
+        if found.role == "loopback"
+        else "O nome não parece o de um loopback. Se este for um microfone, o que vai\n"
+        "ao ar é o ambiente do quarto, não o jogo — confira com o doctor --audio.",
+    )
+    report.add(
+        Level.OK,
+        "áudio",
+        aud.summary(cfg.audio),
+        ""
+        if cfg.audio.offset_ms
+        else "(offset 0 — meça com scripts/av-sync.py antes de assumir que está sincronizado)",
+    )
+
+
+def audio_report(cfg: Config) -> int:
+    """`lanstream doctor --audio`: só a listagem de devices, e nada mais.
+
+    Separado do diagnóstico completo porque responde a uma pergunta única e
+    impaciente — "qual nome eu colo no `[audio] device`?" —, feita logo depois de
+    instalar um driver, quando o resto do doctor já passou faz tempo.
+    """
+    section("DEVICES DIRECTSHOW")
+    if not ff.IS_WINDOWS:
+        typer.echo("  A captura de áudio é do lado do Windows: o dshow não existe aqui.")
+        typer.echo("  Rode lá:  lanstream doctor --audio")
+        typer.echo("  (o equivalente cru é  ffmpeg -list_devices true -f dshow -i dummy)")
+        return 0
+
+    try:
+        info = ff.load(cfg.paths.ffmpeg)
+        devices = aud.list_devices(info)
+    except ff.FFmpegError as exc:
+        typer.secho(f"erro: {exc}", fg="red", err=True)
+        return 1
+
+    audios = aud.audio_devices(devices)
+    videos = [d for d in devices if d.kind == "video"]
+    if not audios:
+        typer.secho("  nenhum device de ÁUDIO", fg="red", bold=True)
+        typer.echo("  O Windows não expõe a saída do sistema como captura por conta própria.")
+        typer.echo("  Ordem de tentativa em docs/fase3.md §1:")
+        typer.echo("    1. Som > Gravação > Mostrar dispositivos desativados > Mixagem estéreo")
+        typer.echo("    2. VB-CABLE (+ Ouvir este dispositivo, ou o jogo deixa de tocar)")
+        typer.echo("    3. VoiceMeeter, se a latência do 'Ouvir' incomodar no jogo")
+    for device in audios:
+        colour = {"loopback": "green", "microfone": "yellow"}.get(device.role, "white")
+        typer.secho(f'  [{device.role:^12}] "{device.name}"', fg=colour)
+        if device.alternative:
+            typer.echo(f"                   {device.alternative}")
+    if videos:
+        typer.echo(f"\n  (+ {len(videos)} device(s) de vídeo, que este projeto não usa)")
+
+    typer.echo("")
+    typer.echo("  'loopback' e 'microfone' são palpites pelo NOME — quem confirma é o ouvido.")
+    typer.echo("  Cole o nome exato em [audio] device e ligue [audio] enabled = true.")
+    return 0
+
+
 def check_firewall(report: Report, cfg: Config) -> None:
     """Windows: a regra de entrada UDP. Sem ela o SRT nem chega no ffmpeg."""
     if not shutil.which("powershell"):
@@ -465,8 +586,11 @@ def check_network(report: Report, cfg: Config) -> None:
     )
 
 
-def run(cfg: Config) -> int:
+def run(cfg: Config, audio: bool = False) -> int:
     """Imprime o diagnóstico completo. Devolve o código de saída."""
+    if audio:
+        return audio_report(cfg)
+
     section("SISTEMA")
     role = (
         "sender (Windows)" if ff.IS_WINDOWS else "receiver (Mac)" if ff.IS_MACOS else "indefinido"
@@ -482,6 +606,10 @@ def run(cfg: Config) -> int:
         f"  gop={v.gop}  monitor={v.monitor}"
     )
     typer.echo(f"  SRT buffer: {cfg.network.latency_ms} ms")
+    typer.echo(
+        "  áudio: "
+        + (aud.summary(cfg.audio) if cfg.audio.enabled else "desligado ([audio] enabled = false)")
+    )
 
     section("CHECAGENS")
     report = Report()
@@ -489,6 +617,7 @@ def run(cfg: Config) -> int:
     if info is not None:
         if ff.IS_WINDOWS:
             check_capture(report, info)
+            check_audio(report, info, cfg)
         check_srt(report, info, cfg)
     if ff.IS_WINDOWS:
         check_firewall(report, cfg)

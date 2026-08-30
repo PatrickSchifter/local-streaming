@@ -21,6 +21,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import audio as aud
 from . import encoders as enc
 from . import ffmpeg as ff
 from .config import Config, parse_bitrate
@@ -67,7 +68,7 @@ def _quote(arg: str) -> str:
     return f'"{arg}"' if re.search(r"[\s&?|<>^]", arg) else arg
 
 
-def capture_filter(cfg: Config, *, hwdownload: bool) -> str:
+def capture_filter(cfg: Config, *, hwdownload: bool, label: str = "") -> str:
     """A cadeia de filtros do ddagrab.
 
     Nada entre o `ddagrab` e o NVENC: o baseline testou as alternativas e as duas
@@ -75,11 +76,14 @@ def capture_filter(cfg: Config, *, hwdownload: bool) -> str:
     devolve ENOSYS e o `scale_d3d11` não configura o pad de saída. Passar direto
     dá o mesmo desempenho (58 fps, 0.98x) sem filtro nenhum. Só o encoder de
     software precisa dos frames na RAM, e aí o download é obrigatório.
+
+    O `label` só aparece quando há áudio junto: com uma segunda entrada no
+    comando, a saída do filtro precisa de nome para ser mapeada (ver `build`).
     """
     chain = f"ddagrab={cfg.video.monitor}:framerate={cfg.video.fps}"
     if hwdownload:
         chain += ",hwdownload,format=bgra,format=nv12"
-    return chain
+    return chain + (f"[{label}]" if label else "")
 
 
 def build(cfg: Config, info: ff.FFmpegInfo | None = None, *, encoder: str = "") -> Plan:
@@ -106,6 +110,15 @@ def build(cfg: Config, info: ff.FFmpegInfo | None = None, *, encoder: str = "") 
     url = cfg.network.url_for_ffmpeg(mode="listener")
     binary = info.path if info is not None else None
 
+    # Com áudio o comando muda de forma, não só de tamanho: a saída do filtro
+    # ganha rótulo e as duas trilhas passam a ser mapeadas na mão. Sem áudio
+    # nada disso aparece, e o argv sai **idêntico** ao que a Fase 2 mediu no
+    # Windows — o que mantém o `diff` contra o win-test-video.ps1 legível e faz
+    # de `--no-audio` um bisect de verdade quando algo quebrar (docs/fase3.md §2).
+    audio = cfg.audio.enabled
+    label = "v" if audio else ""
+    maps = ["-map", "[v]", "-map", "0:a"] if audio else []
+
     argv = [
         str(binary) if binary else "ffmpeg",
         "-hide_banner",
@@ -118,7 +131,11 @@ def build(cfg: Config, info: ff.FFmpegInfo | None = None, *, encoder: str = "") 
         "-init_hw_device",
         "d3d11va",
         "-filter_complex",
-        capture_filter(cfg, hwdownload=profile.needs_hwdownload),
+        capture_filter(cfg, hwdownload=profile.needs_hwdownload, label=label),
+        # O áudio é a ÚNICA entrada de arquivo do comando (o vídeo nasce dentro do
+        # filter_complex, sem `-i`), então ele é o input 0 — daí o `-map 0:a`.
+        *(aud.input_args(cfg.audio) if audio else []),
+        *maps,
         "-c:v",
         chosen,
         *preset,
@@ -138,6 +155,7 @@ def build(cfg: Config, info: ff.FFmpegInfo | None = None, *, encoder: str = "") 
         # (latência é barata aqui), mas isso é knob da Fase 7, com medição junto.
         "-bf",
         "0",
+        *(aud.encode_args(cfg.audio) if audio else []),
         "-f",
         "mpegts",
         url,
@@ -300,5 +318,6 @@ def summary(cfg: Config, plan: Plan) -> list[str]:
         # mudou, e é bom que a linha acima esteja na tela para comparar.
         f"monitor {v.monitor} — esperado {v.width}x{v.height}, "
         f"buffer SRT {cfg.network.latency_ms} ms",
+        aud.summary(cfg.audio) if cfg.audio.enabled else "sem áudio ([audio] enabled = false)",
         f"escutando em {plan.url}",
     ]

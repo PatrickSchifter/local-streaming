@@ -72,9 +72,17 @@ def _root(
 
 
 @app.command()
-def doctor(config: ConfigOption = None) -> None:
-    """Diagnostica este lado: ffmpeg, encoders, captura, SRT, rede e firewall."""
-    sys.exit(_guard(doctor_mod.run, _load(config)))
+def doctor(
+    config: ConfigOption = None,
+    audio: Annotated[
+        bool,
+        typer.Option(
+            "--audio", help="Só a lista de devices DirectShow (o nome para [audio] device)."
+        ),
+    ] = False,
+) -> None:
+    """Diagnostica este lado: ffmpeg, encoders, captura, áudio, SRT, rede e firewall."""
+    sys.exit(_guard(doctor_mod.run, _load(config), audio))
 
 
 @app.command()
@@ -89,12 +97,21 @@ def send(
     bitrate: Annotated[
         str, typer.Option("--bitrate", help='Sobrescreve o bitrate do vídeo (ex.: "12M").')
     ] = "",
+    no_audio: Annotated[
+        bool,
+        typer.Option("--no-audio", help="Ignora o [audio] desta rodada: só vídeo, como na Fase 2."),
+    ] = False,
 ) -> None:
     """Captura a tela do Windows e publica em SRT. Ctrl+C encerra."""
     cfg = _load(config)
     if bitrate:
         cfg.video.bitrate = bitrate
         _guard(cfg.video.validate)
+    # Desligar o áudio devolve exatamente o comando da Fase 2, e é assim que se
+    # decide de quem é a culpa quando a rodada com áudio quebra: se sem áudio
+    # funciona, o problema é o device, não a captura nem a rede.
+    if no_audio:
+        cfg.audio.enabled = False
 
     note = _guard(sender_mod.check_platform, dry_run)
     # Fora do Windows o ffmpeg local não é o que vai rodar: exigir que ele exista

@@ -330,18 +330,23 @@ lento) ou rodar OBS no Windows só como capturador. Descobrir isso na Fase 0, n�
       semântica anterior ao 010d763) e a mensagem dizia "o IP mudou" — mandava
       caçar a coisa errada. Agora `host == peer` é diagnosticado pelo nome e o
       caso ambíguo lista as duas hipóteses (`docs/fase2.md` §7).
-- [ ] **F2.3 — a rodada com o OBS do Mac.** É o critério de saída, e é o que
-      falta. As rodadas de 30/08 foram curtas, com a tela parada e sem receptor:
-      não medem fps nem bitrate. Protocolo em
-      [`docs/proximos-testes.md`](docs/proximos-testes.md) §F2.
+- [x] **F2.3 — a rodada com o OBS do Mac.** Rodou em 30/08 e fechou o critério
+      de saída. Os contadores do lado do Mac, que ficaram como dívida na primeira
+      escrita, foram coletados por `obs-websocket` durante a própria corrida:
+      mídia/relógio 0.9997 em 60 s, zero frame descartado pelo OBS, render 60.00
+      fps, CPU 10.7–11.1%. As duas pontas concordam, inclusive no fim
+      (`docs/proximos-testes.md` §F2.3). O `RCV-DROPPED` do libsrt continua não
+      coletado, e agora com motivo: o obs-websocket não expõe as estatísticas
+      internas do SRT — quem as tem é o `receive --preview` da Fase 4.
 
 **Saída:** `lanstream send` no Windows + Media Source no Mac = jogo na tela do OBS.
 
-> **Onde está:** 🟡 **Rodou no Windows em 30/08 e passou em 4 dos 5 passos.** O
-> `CTRL_C_EVENT` — a lacuna que o protocolo existia para fechar — chega no ffmpeg
-> e ele sai escrevendo o trailer, sem `terminate` e sem segurar a porta.
-> Falta o **F2.3**: o `ddagrab` entregando frame **com o receptor conectado**, e
-> os fps com jogo real. Só isso separa a fase do fim.
+> **Onde está:** ✅ **Fechada em 30/08, com os cinco passos.** O `CTRL_C_EVENT`
+> chega no ffmpeg e ele sai escrevendo o trailer, sem `terminate` e sem segurar a
+> porta; e o jogo real chegou no OBS do Mac medido dos dois lados.
+> **A fase produziu uma restrição:** só **borderless**. Em fullscreen exclusivo a
+> captura morre em ~4 s com `DXGI_ERROR_ACCESS_LOST` (§F2.3-bis) — é limitação da
+> Desktop Duplication, não do código, e vale para toda sessão daqui em diante.
 
 ---
 
@@ -350,22 +355,48 @@ lento) ou rodar OBS no Windows só como capturador. Descobrir isso na Fase 0, n�
 O ponto mais chato do projeto inteiro. O `ffmpeg` **não tem** captura WASAPI
 loopback nativa no Windows, então precisa de um device intermediário.
 
-- [ ] Avaliar as opções, em ordem de preferência:
-      1. **VB-Audio Cable** (ou VoiceMeeter) — cria um device virtual; saída do
-         jogo vai pro cable, `ffmpeg -f dshow -i audio="CABLE Output"` captura.
-         Cuidado: por padrão você deixa de ouvir o áudio → habilitar "Listen to
-         this device" ou usar o VoiceMeeter pra duplicar.
-      2. `virtual-audio-capturer` do pacote screen-capture-recorder — loopback
-         direto do device default, sem mexer no roteamento. Mais simples, porém
-         projeto antigo.
-      3. Fallback: áudio via OBS no Windows (descartado se 1 ou 2 funcionar).
-- [ ] Adicionar a entrada de áudio no argv, encodar em AAC 160–320k, muxar no
-      mesmo MPEG-TS.
-- [ ] `lanstream doctor --audio` lista os devices dshow disponíveis (`-list_devices true`).
-- [ ] Verificar A/V sync: gravar um teste com claquete visual+sonora e conferir
-      no OBS. Se houver drift, aplicar `-itsoffset` no lado do sender.
+- [x] **A ordem de preferência mudou, e o motivo não é técnico.** O áudio precisa
+      continuar saindo pela caixa de som do Windows — quem está jogando está
+      sentado nela —, e isso reprova o VB-CABLE puro, que emudece o jogo para o
+      jogador. A ordem agora é (`docs/fase3.md` §1):
+      1. **Mixagem estéreo (Stereo Mix)** do Realtek — custo zero, é só habilitar
+         em `mmsys.cpl > Gravação > Mostrar dispositivos desativados`. Pode não
+         existir no driver, e o `Win32_SoundDevice` do baseline **não** responde
+         isso: ele lista placas, não entradas desabilitadas.
+      2. **VB-CABLE** + "Ouvir este dispositivo" — driver e reboot, e o "Ouvir"
+         põe latência no ouvido de quem joga.
+      3. **VoiceMeeter**, se essa latência atrapalhar: é o que duplica direito.
+      4. `virtual-audio-capturer` — não mexe no roteamento, mas é projeto parado.
+- [x] Entrada de áudio no argv, AAC 160k, muxada no mesmo MPEG-TS. Com o áudio
+      desligado o comando sai **byte a byte igual** ao da Fase 2 (verificado com
+      `diff`), o que faz do `send --no-audio` um bisect de verdade. Junto vieram
+      `-audio_buffer_size` (o default do dshow é ~500 ms, que sozinho seria a
+      dessincronia inteira) e `-thread_queue_size` (duas entradas ao vivo).
+- [x] `lanstream doctor --audio` lista os devices dshow **classificados** em
+      loopback / microfone / desconhecido, e sem device nenhum imprime a ordem de
+      tentativa acima. O parser aguenta os dois formatos de listagem que existem.
+- [x] **A forma do comando validada num ffmpeg de verdade, sem sair do Mac.**
+      `scripts/av-sync.py ensaio` troca só o que não existe fora do Windows
+      (ddagrab, dshow, NVENC) e roda o resto: duas trilhas no TS, 48 kHz estéreo,
+      deriva -0.0 ms em 200 s. Não prova nada sobre a captura — prova que o
+      comando não está torto.
+- [x] **A/V sync virou número, não impressão.** Claquete de 100 ms a cada 5 s,
+      `blackdetect` × `silencedetect`, com o viés do método medido (~12 ms) e
+      offset separado de deriva. O sinal do `-itsoffset` foi **medido**: positivo
+      atrasa o áudio (`docs/fase3.md` §3).
+- [ ] **F3 no Windows** — o bloqueio é de hardware: a máquina não tem device de
+      captura nenhum (`baseline` §7). Protocolo em
+      [`docs/proximos-testes.md`](docs/proximos-testes.md) §F3; o passo 1 custa
+      2 minutos e pode encerrar a fase sem instalar nada.
+- [ ] Se aparecer deriva (e não offset), o caminho é `aresample=async=1` — e aí
+      é item da Fase 7, com a medição junto, não um knob solto aqui.
 
 **Saída:** áudio do jogo chegando no OBS, sincronizado, sem drift depois de 20 minutos.
+
+> **Onde está:** 🟡 **O lado do código está pronto e medido; falta o device.**
+> Tudo que não depende da máquina do Windows foi feito e verificado num ffmpeg
+> real. O que resta é o §F3, e ele começa perguntando se o Stereo Mix está só
+> desabilitado — o baseline não sabia responder isso.
 
 ---
 
