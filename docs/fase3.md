@@ -128,10 +128,24 @@ Três coisas que a medição precisa dizer e que o script já trata:
    `ddagrab` e o do device de áudio) e a correção seria `aresample=async=1`, que é
    assunto da Fase 7 e com medição junto. Por isso o relatório separa os dois, e
    só calcula deriva com janela de 3 min ou mais: em 20 s, ruído vira "274 ms/hora".
+   E a **taxa** em ms/hora é extrapolação — o que foi medido é a diferença entre
+   as metades, com o piso de ruído junto. Uma janela de 20 min separa os centros
+   das metades por 10 min, então ela só resolve deriva acima de ~240 ms/hora; o
+   script imprime esse limite em vez de anunciar precisão que não tem.
+   *(O denominador dessa conta é a distância entre os centros das metades, não a
+   janela inteira — a revisão pegou esse fator 2, e ele fazia uma rodada que devia
+   reprovar no §F3.4 ler como aprovada.)*
 3. **O fim do arquivo mente.** Os dois filtros fecham o intervalo aberto quando a
    entrada acaba, então um arquivo que termina no preto e no silêncio ganha um
    "flash" e um "bipe" que nunca existiram — e como caem no mesmo instante, o par
    falso passaria por uma medição perfeita. São descartados.
+
+4. **O offset atual é premissa, e ela mora na outra máquina.** A medição roda no
+   Mac; o `[audio] offset_ms` que ela corrige está no `lanstream.toml` do
+   **Windows**. Ler o config local daria um número plausível e errado, então o
+   script imprime a premissa que usou — sem isso, a segunda rodada do laço
+   "corrige e confirma" recomendaria sobrescrever a correção anterior com um valor
+   absoluto, e o laço nunca convergiria.
 
 O mesmo script gera a claquete para tocar no Windows (`claquete`) e mede uma
 gravação do OBS (`medir`), o que fecha o laço: o número que sai da gravação vira
@@ -157,7 +171,36 @@ ffmpeg 5+ e as seções `DirectShow audio devices` até o 4.4), verificado contr
 amostras dos dois — é o mesmo erro que o commit aacb863 consertou no `-encoders`,
 e ele custaria um "nenhum device de áudio" numa máquina cheia deles.
 
-## 6. O que falta, e o que é bloqueio
+## 6. A revisão de código: sete defeitos, e um deles decidia a fase errado
+
+O `/code-review` rodou sobre o commit e achou sete — nenhum crítico, todos reais,
+todos corrigidos. Os quatro que valem registro:
+
+1. **A taxa de deriva saía pela metade** (fator 2 no denominador, §4). O §F3.4
+   decide a fase em cima desse número: uma rodada que devia reprovar leria como
+   aprovada. É o pior tipo de defeito que este projeto pode ter — um instrumento
+   que erra para o lado de "está tudo bem", como os dois defaults que a revisão da
+   Fase 2 pegou.
+2. **O doctor inteiro morria se o `-encoders` travasse.** A checagem de áudio lia
+   `info.encoders` fora do `_ask`; com o ffmpeg pendurado, o `check_ffmpeg` já
+   tinha registrado a FALHA e voltado, mas a leitura seguinte levantava de novo e
+   o relatório saía pelo `_guard` **antes de ser impresso** — exatamente no
+   cenário que o módulo existe para diagnosticar.
+3. **`doctor --audio` saía 0 sem device nenhum**, contra a convenção do módulo
+   (código 1 se houve FALHA, para dar `doctor && send`). E ainda mandava "cole o
+   nome exato" embaixo de uma lista vazia.
+4. **Um microfone configurado como captura passava em verde.** `[ OK ]` num
+   device de microfone é o ambiente do quarto no ar em vez do jogo, e um OK não
+   aparece no resumo final. Virou AVISO — não FALHA, porque a classificação é
+   palpite pelo nome e um device legítimo de nome esquisito não pode barrar a
+   transmissão.
+
+Os outros três: o descarte do par falso do fim do arquivo se desligava sozinho
+quando o `ffprobe` não dava a duração (agora descarta o último evento, que erra
+para o lado seguro); o `--offset-atual` era uma premissa silenciosa (§4.4); e
+sobrou um `plan.argv[:0] or argv` que era sempre a segunda metade.
+
+## 7. O que falta, e o que é bloqueio
 
 | | |
 |---|---|

@@ -134,11 +134,18 @@ def detect(path: Path) -> tuple[list[float], list[float]]:
             "-",
         ]
     )
-    corte = fim - FLASH * 2 if fim else float("inf")
-    return (
-        [t for m in _BLACK_END.findall(output) if (t := float(m)) < corte],
-        [t for m in _SILENCE_END.findall(output) if (t := float(m)) < corte],
-    )
+    flashes = [float(m) for m in _BLACK_END.findall(output)]
+    beeps = [float(m) for m in _SILENCE_END.findall(output)]
+    if not fim:
+        # Sem duração (ffprobe dizendo N/A, gravação truncada) o corte por tempo
+        # não existe — e cair para "não filtra nada" seria o pior dos dois mundos,
+        # porque o par falso do fim cai nos dois filtros no mesmo instante e
+        # passaria por uma medição perfeita. Descartar o último de cada lista
+        # custa no máximo um par bom e nunca deixa entrar um inventado.
+        print("  (ffprobe não deu a duração: descartando o último flash e o último bipe)")
+        return flashes[:-1], beeps[:-1]
+    corte = fim - FLASH * 2
+    return ([t for t in flashes if t < corte], [t for t in beeps if t < corte])
 
 
 def pair_up(flashes: list[float], beeps: list[float]) -> list[Pair]:
@@ -182,18 +189,43 @@ def report(path: Path, pairs: list[Pair], offset_atual: int) -> int:
     if len(pairs) >= 6 and span >= DERIVA_MINIMA:
         metade = len(pairs) // 2
         deriva = statistics.median(offsets[metade:]) - statistics.median(offsets[:metade])
-        por_hora = deriva / span * 3600
+        # A `deriva` é a distância entre as MEDIANAS das duas metades, e elas não
+        # estão separadas pela janela inteira: estão separadas pelos centros das
+        # metades, que é ~metade dela. Dividir pelo `span` daria metade da taxa
+        # real — e como o F3.4 decide a fase em "> 100 ms/hora", uma rodada que
+        # devia reprovar leria como aprovada. O denominador é medido, não
+        # deduzido, para valer também com claquete faltando no meio.
+        centro = statistics.median([p.video for p in pairs[metade:]]) - statistics.median(
+            [p.video for p in pairs[:metade]]
+        )
+        por_hora = deriva / centro * 3600 if centro else 0.0
         print(f"  deriva:   {deriva:+.1f} ms entre a 1a e a 2a metade ({por_hora:+.0f} ms/hora)")
         if abs(deriva) > RUIDO:
             print("  ^ isto é DERIVA, não offset: -itsoffset não resolve (docs/fase3.md §4)")
+        elif centro:
+            # A taxa em ms/hora é uma extrapolação: quem foi medido é a diferença
+            # entre as metades, e ela tem o piso de ruído do método. Numa janela
+            # curta, uma taxa alta pode ser só ruído multiplicado — dizer "deriva
+            # de 300 ms/hora" a partir de 15 ms medidos seria inventar precisão.
+            print(
+                f"  ^ diferença dentro do ruído ({RUIDO:.0f} ms): esta janela só "
+                f"resolve deriva acima de {RUIDO / centro * 3600:.0f} ms/hora"
+            )
     else:
         print(
             f"  deriva:   janela de {span:.0f} s é curta demais para medir "
             f"(precisa de {DERIVA_MINIMA:.0f} s e 6 claquetes)"
         )
 
+    # O `offset_atual` é premissa, não medida — e o valor de verdade está no
+    # lanstream.toml do WINDOWS, não no da máquina que roda esta medição. Ler o
+    # config local seria pior que perguntar: daria um número plausível e errado.
+    # Então a premissa vai impressa, para que uma segunda rodada com o offset já
+    # corrigido não recomende sobrescrever a correção com um valor absoluto.
     alvo = offset_atual - round(mediana)
-    print(f"\n  [audio] offset_ms = {alvo}    # era {offset_atual}, corrige {mediana:+.0f} ms")
+    print(f"\n  premissa: [audio] offset_ms = {offset_atual} no toml DO WINDOWS", end="")
+    print(" — se não for esse, passe --offset-atual" if not offset_atual else "")
+    print(f"  [audio] offset_ms = {alvo}    # era {offset_atual}, corrige {mediana:+.0f} ms")
     if abs(mediana) < RUIDO:
         print(
             f"  (abaixo de {RUIDO:.0f} ms este método não distingue de zero — "
@@ -257,7 +289,7 @@ def rehearse(args) -> int:
     destino = Path(args.saida)
     argv = rehearse_argv(plan.argv, destino, args.segundos, args.encoder)
     print("comando da Fase 3, com as três partes do Windows substituídas:\n")
-    print("  " + " ".join(plan.argv[:0] or argv))
+    print("  " + " ".join(argv))
     print()
     saida = _run(argv)
     if not destino.exists() or destino.stat().st_size == 0:

@@ -330,7 +330,13 @@ def check_audio(report: Report, info: ff.FFmpegInfo, cfg: Config) -> None:
         report.add(Level.OK, "áudio", "desligado ([audio] enabled = false)")
         return
 
-    if "aac" not in info.encoders:
+    # Pelo `_ask`, e não direto: se o `-encoders` for o que travou, o
+    # `check_ffmpeg` já registrou a FALHA e voltou, mas a `cached_property` não
+    # guardou nada — ler daqui levantaria de novo, e desta vez sem ninguém para
+    # pegar. O relatório inteiro morreria antes de ser impresso, justamente no
+    # cenário que o doctor existe para diagnosticar.
+    encoders = _ask(report, "encoder de áudio", lambda: info.encoders)
+    if encoders is not None and "aac" not in encoders:
         report.add(
             Level.FAIL,
             "encoder de áudio",
@@ -375,14 +381,19 @@ def check_audio(report: Report, info: ff.FFmpegInfo, cfg: Config) -> None:
         )
         return
 
+    # AVISO, não OK, quando o nome não parece de loopback: um `[ OK ]` verde num
+    # microfone põe o ambiente do quarto no ar no lugar do jogo, e some do resumo
+    # final — que só fala de FALHAs e AVISOs. Não é FALHA porque a classificação
+    # é palpite pelo nome, e um device legítimo de nome esquisito não pode
+    # impedir a transmissão.
     report.add(
-        Level.OK,
+        Level.OK if found.role == "loopback" else Level.WARN,
         "device de áudio",
         f'"{found.name}" ({found.role})',
         ""
         if found.role == "loopback"
         else "O nome não parece o de um loopback. Se este for um microfone, o que vai\n"
-        "ao ar é o ambiente do quarto, não o jogo — confira com o doctor --audio.",
+        "ao ar é o ambiente do quarto, não o jogo — confira ouvindo, no §F3.3.",
     )
     report.add(
         Level.OK,
@@ -424,6 +435,11 @@ def audio_report(cfg: Config) -> int:
         typer.echo("    1. Som > Gravação > Mostrar dispositivos desativados > Mixagem estéreo")
         typer.echo("    2. VB-CABLE (+ Ouvir este dispositivo, ou o jogo deixa de tocar)")
         typer.echo("    3. VoiceMeeter, se a latência do 'Ouvir' incomodar no jogo")
+        # Código 1 porque isto é uma FALHA como qualquer outra do doctor, e a
+        # convenção do módulo é que dê para encadear `doctor && send`. Sair 0 aqui
+        # deixaria o `send` subir na máquina que comprovadamente não tem o que
+        # capturar. E nada de "cole o nome exato" embaixo de uma lista vazia.
+        return 1
     for device in audios:
         colour = {"loopback": "green", "microfone": "yellow"}.get(device.role, "white")
         typer.secho(f'  [{device.role:^12}] "{device.name}"', fg=colour)

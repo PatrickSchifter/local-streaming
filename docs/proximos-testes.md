@@ -184,12 +184,19 @@ python scripts/av-sync.py medir ~/Movies/2026-08-31\ 20-00-00.mkv --offset-atual
 |---|---|---|
 | mediana < 40 ms e deriva ~0 | sincronizado dentro do piso do método | **fase fechada**, não mexa no offset |
 | mediana estável, deriva ~0 | offset constante | cole a linha `[audio] offset_ms = N` que o script imprime, e refaça o F3.4 para confirmar |
-| deriva > 100 ms/hora | dois relógios correndo diferente | `-itsoffset` **não** resolve; é `aresample=async=1`, e vira item da Fase 7 com esta medição junto |
+| deriva medida acima do ruído (>40 ms entre as metades) | dois relógios correndo diferente | `-itsoffset` **não** resolve; é `aresample=async=1`, e vira item da Fase 7 com esta medição junto |
 | nenhum par encontrado | a claquete não estava na cena, ou tinha overlay por cima | refazer com a fonte em tela cheia |
 
 > **Compare com o viés, não com zero.** O próprio arquivo de claquete mede `+12 ms`
 > porque `blackdetect` só responde no quadro seguinte e `silencedetect` decide por
 > janelas de ~21 ms. O que interessa é quanto a gravação se afasta desse número.
+>
+> **E o que 20 minutos conseguem decidir sobre deriva:** o piso de ruído de 40 ms
+> sobre uma separação de 10 min entre as metades dá **~240 ms/hora** de resolução.
+> Uma deriva menor que isso existe mas não aparece nesta gravação — e ela custaria
+> menos de 80 ms numa sessão de 20 min, que é o limite do que se percebe. Se a
+> sessão real for de horas, refaça a medição com uma gravação longa; o script
+> imprime a resolução da janela que ele teve.
 
 ### F3.5 — a rodada real ⏱️ o resto da sessão
 
