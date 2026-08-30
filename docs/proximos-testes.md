@@ -3,8 +3,9 @@
 Ordem de prioridade. Cada teste diz o comando exato, o que eu faço do lado do Mac,
 e **o que o resultado decide** — nenhum teste aqui é "por garantia".
 
-🔴 **O bloqueante de hoje é o F2** — é o critério de saída da Fase 2, e nada
-depois dele começa antes. O código já está no repositório; falta rodá-lo aqui.
+🟡 **O F2 rodou em 30/08: quatro dos cinco passos passaram.** Falta só o
+**F2.3**, o único que precisa do Mac do outro lado — é o que segura o critério de
+saída da Fase 2. Resultado passo a passo abaixo.
 
 O **F1** era da Fase 1 e **passou em 29/08** — a Fase 1 fechou, registro em
 [`docs/fase1.md`](fase1.md). Os T1–T6 são resquícios da Fase 0: ela fechou sem
@@ -45,12 +46,17 @@ que roda a 60 fps dentro desse teto.
 
 ---
 
-## F2 — `lanstream send` no Windows 🔴 **bloqueante — é o critério de saída da Fase 2**
+## F2 — `lanstream send` no Windows 🟡 **4 de 5 passaram; falta o F2.3**
 
 O código está escrito e verificado no que não depende do Windows (`docs/fase2.md`
 §5). Três coisas só esta máquina responde: o `ddagrab`, o NVENC, e o **Ctrl+C do
 console do Windows** — o teste daqui foi um SIGINT em POSIX, e o `CTRL_C_EVENT`
 percorre outro caminho.
+
+> **Rodado em 30/08.** Das três, duas já responderam: o NVENC é escolhido e monta o
+> comando da Fase 0 (F2.1/F2.2), e o `CTRL_C_EVENT` do Windows encerra o ffmpeg
+> limpo, sem órfão, sem `terminate` (F2.4/F2.5). Falta o `ddagrab` **com o OBS do
+> outro lado**, que é o F2.3.
 
 São cinco passos. Os quatro primeiros levam ~2 minutos e **não precisam de mim do
 outro lado**; só o F2.3 precisa do OBS aberto no Mac.
@@ -63,9 +69,24 @@ git pull
 uv pip install -e ".[dev]"    # há módulos novos (encoders.py, sender.py)
 ```
 
-> O `lanstream.toml` daí **não precisa mudar**. Se ele tem `preset = "p5"`,
-> continua válido — `p5` é um preset da família NVENC. A diferença é que agora a
-> chave pode ficar vazia e dá no mesmo (`docs/fase2.md` §2).
+> O `lanstream.toml` daí **não precisa mudar por causa do `preset`**. Se ele tem
+> `preset = "p5"`, continua válido — `p5` é um preset da família NVENC. A
+> diferença é que agora a chave pode ficar vazia e dá no mesmo (`docs/fase2.md` §2).
+>
+> ❌ **Mas precisou mudar por outro motivo, e a instrução acima está incompleta.**
+> O `lanstream.toml` do Windows ainda tinha `host = "192.168.0.21"` (o Mac), que
+> era a instrução da Fase 0/1. Com a separação `host`/`peer` do commit 010d763
+> isso virou **FALHA** — e a FALHA é o comportamento correto, é para isso que a
+> checagem existe. O arquivo daqui agora é:
+>
+> ```toml
+> [network]
+> host = "192.168.0.12"   # esta máquina, o sender
+> peer = "192.168.0.21"   # o Mac
+> ```
+>
+> Quem tinha o `host` antigo precisa fazer essa troca **antes** do F2.1, senão o
+> passo falha por config velha e não por defeito no código.
 
 ### F2.1 — o doctor ganhou uma checagem
 
@@ -79,6 +100,19 @@ registro da Fase 1. Uma veio da separação `host`/`peer` (`host do sender`, com
 `preset: -preset p5`.
 
 **Se falhar:** cole a saída. Uma FALHA aqui invalida os passos seguintes.
+
+> ✅ **Passou em 30/08 — 11 checagens, 11 OK, código 0.** ffmpeg 8.1
+> (`full_build-www.gyan.dev`), `hevc_nvenc` escolhido, `preset: -preset p5` com a
+> nota `(default da família — [video] preset está vazio)`, `ddagrab` e SRT
+> presentes, regra de firewall viva, IP ainda **192.168.0.12**, porta 9000 livre,
+> `host do sender: 192.168.0.12 — é esta máquina, como deve ser` e
+> `alcance até 192.168.0.21: responde ao ping`.
+>
+> ⚠️ **A décima primeira checagem depende do `peer`.** Sem `[network] peer`
+> preenchido saem **dez** — a linha de alcance simplesmente não existe, e o doctor
+> imprime a dica `(opcional: [network] peer = IP do Mac ...)` no lugar. Só dá onze
+> com o `peer` no toml. A primeira execução, com o `host` velho, deu dez linhas e
+> FALHA no `host do sender`; ver o achado acima.
 
 ### F2.2 — o comando montado é o mesmo da Fase 0? (o passo mais barato)
 
@@ -97,6 +131,18 @@ diferença esperada é o `-nostdin`. Confira nominalmente:
 
 **O que o resultado decide:** se algo aqui divergir, o problema é meu, do lado do
 Mac, e não vale queimar uma sessão de teste. Cole a linha e eu conserto.
+
+> ✅ **Passou em 30/08 — os cinco itens conferem, nada divergiu.** A linha impressa
+> aqui, na íntegra:
+>
+> ```
+> C:\Users\schif\AppData\Local\Microsoft\WinGet\Links\ffmpeg.EXE -hide_banner -loglevel info -stats -nostdin -init_hw_device d3d11va -filter_complex ddagrab=0:framerate=60 -c:v hevc_nvenc -preset p5 -tune hq -rc cbr -b:v 15M -maxrate 15M -bufsize 15M -g 120 -bf 0 -f mpegts "srt://0.0.0.0:9000?mode=listener&latency=1200000"
+> ```
+>
+> Contra o `win-test-video.ps1` a diferença é o `-nostdin`, como previsto — e o
+> argv[0], que aqui é o caminho absoluto resolvido pelo doctor em vez do `ffmpeg`
+> do PATH que o script da Fase 0 usava. Sem espaço no caminho, então sem aspas e
+> sem o `&` do `shell_line`.
 
 ### F2.3 — a rodada real (esta precisa do Mac)
 
@@ -141,6 +187,30 @@ Get-Process ffmpeg -ErrorAction SilentlyContinue   # esperado: nada
 Get-NetUDPEndpoint -LocalPort 9000 -ErrorAction SilentlyContinue   # esperado: nada
 ```
 
+> ✅ **Passou em 30/08 — o `CTRL_C_EVENT` do Windows chega no ffmpeg.** Três
+> rodadas, saída em **0.67 s, 0.27 s e 0.36 s**, código 0 nas três. Em todas:
+>
+> - `encerrando o ffmpeg (fechando o mux e a porta SRT)...` apareceu;
+> - `Exiting normally, received signal 2.` apareceu **depois** dele — ou seja, o
+>   ffmpeg tratou o sinal e ainda escreveu o trailer (`muxing overhead: 10.74%`,
+>   `Lsize=531KiB`), não morreu no meio;
+> - `o ffmpeg não saiu em 5s — mandando terminate` **não** apareceu;
+> - `Get-Process ffmpeg`: nada. `Get-NetUDPEndpoint -LocalPort 9000`: nada.
+>
+> Ou seja: não é preciso mexer em `CREATE_NEW_PROCESS_GROUP`. A herança de grupo
+> descrita em `fase2.md` §4 é a decisão certa também no Windows real, e não só no
+> SIGINT do POSIX. **A lacuna que este passo existia para descobrir não existe.**
+>
+> 📎 **Como o Ctrl+C foi disparado, para ser honesto sobre o método:** não foi um
+> dedo na tecla. O `send` foi lançado num console próprio (`CREATE_NEW_CONSOLE`)
+> com a saída num arquivo, e um harness se anexou àquele console
+> (`AttachConsole`) e chamou `GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0)` — o mesmo
+> evento que o driver do console gera quando a tecla é apertada, entregue ao grupo
+> inteiro do console: o python do `lanstream` **e** o ffmpeg que ele herdou. É o
+> caminho do `CTRL_C_EVENT` de verdade, que é exatamente o que o SIGINT do POSIX
+> não exercitava. O harness está fora do repositório; dá para commitá-lo se você
+> quiser repetir isso sem depender de alguém apertando tecla.
+
 ### F2.5 — rodar duas vezes seguidas (a prova de que não sobrou órfão)
 
 É o teste que realmente vale, e custa 20 segundos:
@@ -154,20 +224,37 @@ Se a segunda subir sem `Address already in use` / `bind failed`, a promessa
 "encerra sem deixar ffmpeg segurando a porta 9000" está cumprida **no SO que
 importa**. Se não subir, o F2.4 mentiu e é lá que está o defeito.
 
+> ✅ **Passou em 30/08.** Duas rodadas encostadas uma na outra (~1 s entre o fim de
+> uma e o começo da outra). A segunda subiu na hora, com o mesmo
+> `Stream #0:0: Video: hevc (Main), d3d11(...), 1920x1080 ... 15000 kb/s, 60 fps`
+> da primeira. Nenhum `Address already in use`, nenhum `bind failed`, nenhum
+> ffmpeg órfão, e `Get-NetUDPEndpoint -LocalPort 9000` vazio antes e depois de
+> cada uma. A promessa está cumprida no SO que importa.
+
 ---
 
 ### Veredito da fase
 
 | Passo | Precisa do Mac? | Resultado |
 |---|---|---|
-| F2.1 doctor (10 checagens) | não | |
-| F2.2 dry-run == Fase 0 | não | |
-| F2.3 jogo no OBS | **sim** | |
-| F2.4 Ctrl+C limpo | não | |
-| F2.5 duas rodadas seguidas | não | |
+| F2.1 doctor (11 checagens) | não | ✅ 11 OK, código 0 — depois de corrigir o `host` do toml |
+| F2.2 dry-run == Fase 0 | não | ✅ idêntico, só o `-nostdin` a mais |
+| F2.3 jogo no OBS | **sim** | ⏳ **pendente — é o único que falta para fechar a fase** |
+| F2.4 Ctrl+C limpo | não | ✅ 0.27–0.67 s, `signal 2` tratado, zero órfão |
+| F2.5 duas rodadas seguidas | não | ✅ a segunda sobe na hora |
 
 Os cinco passando = **Fase 2 fechada**, e a Fase 3 (áudio) começa — que é a que
 exige instalar driver e reiniciar a máquina.
+
+**Estado em 30/08:** quatro passaram, o F2.3 está de pé esperando o Mac. Tudo que
+esta máquina respondia sozinha, respondeu.
+
+> 🟡 **Uma observação para o F2.3, não um defeito.** Nas rodadas de ~5 s **sem
+> receptor conectado** o ffmpeg registrou `dup=0 drop=1` — um frame em 284 — e
+> `speed` entre 0.83x e 0.98x, subindo ao longo da corrida. Não vale como medida:
+> a corrida é curta demais (regra 6), a tela estava parada (regra 7) e o bitrate
+> real ficou em ~0.9 Mbps, longe do teto de 15M. Está anotado só para que o
+> `drop=1` não apareça como novidade no F2.3.
 
 ---
 

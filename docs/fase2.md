@@ -142,16 +142,30 @@ Verificado no Mac (o que não depende de GPU NVIDIA nem de `ddagrab`):
 | `example.toml` == defaults (invariante da Fase 1) | ✅ mantido |
 | `ruff check src/` | ✅ limpo |
 
-**Ainda não verificado — é o critério de saída da fase**
-(o protocolo está em [`proximos-testes.md`](proximos-testes.md) §F2):
+**Verificado no Windows em 30/08** — quatro dos cinco passos do protocolo
+(`proximos-testes.md` §F2), os que não dependem do Mac:
+
+| Item | Resultado |
+|---|---|
+| `doctor`: 11 checagens | ✅ 11 OK, código 0 (`hevc_nvenc`, `-preset p5`) |
+| Comando montado no Windows real | ✅ igual ao do §1, com o caminho absoluto do ffmpeg no argv[0] |
+| `CTRL_C_EVENT` do console do Windows | ✅ 0.27–0.67 s, `Exiting normally, received signal 2`, sem `terminate` |
+| Sem ffmpeg órfão / porta 9000 livre | ✅ nas três rodadas |
+| Dois `send` seguidos | ✅ o segundo sobe na hora, sem `Address already in use` |
+
+O ponto do §4 se confirma no SO que ele descreve: **herdar o grupo do console é o
+que faz o Ctrl+C chegar no ffmpeg no Windows também.** O `CREATE_NEW_PROCESS_GROUP`
+continua sendo a escolha errada, agora por medição nas duas plataformas.
+
+**Ainda não verificado — é o que segura o critério de saída da fase**
+(passo F2.3 do protocolo):
 
 - [ ] `lanstream send` rodando no Windows, com o OBS do Mac como Media Source.
-      O que a rodada precisa confirmar: o `hevc_nvenc` é mesmo escolhido pela
-      cadeia (o `doctor` já disse que sim, mas quem monta o comando agora é outro
-      código), os fps com jogo real (a Fase 0 mediu 55–58 com a tela em
-      movimento e deixou o caso do fullscreen exclusivo em aberto), e o Ctrl+C
-      no console do Windows — o teste acima foi um SIGINT em POSIX, e o
-      `CTRL_C_EVENT` do Windows percorre outro caminho.
+      O que falta a rodada confirmar: o `ddagrab` entregando frame **com o
+      receptor conectado**, e os fps com jogo real (a Fase 0 mediu 55–58 com a
+      tela em movimento e deixou o caso do fullscreen exclusivo em aberto). As
+      rodadas de 30/08 foram curtas, com a tela parada e sem ninguém do outro
+      lado — não medem nem fps nem bitrate, e não valem como F2.3.
 
 ## 6. Revisão de código: cinco defeitos, dois deles em promessas escritas
 
