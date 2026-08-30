@@ -1,5 +1,5 @@
-"""Entrada da CLI. Fase 1 entrega `doctor` e `config`; `send`/`receive`/`obs`
-chegam nas Fases 2, 4 e 6.
+"""Entrada da CLI. Fase 1 entregou `doctor` e `config`, a Fase 2 traz o `send`;
+`receive` e `obs` chegam nas Fases 4 e 6.
 
 Regra que vale para todos os comandos: erro de config ou de ambiente sai como
 mensagem de uma linha e código 2 — nunca como traceback (PLANO §Fase 1).
@@ -16,9 +16,12 @@ import typer
 
 from . import __version__
 from . import doctor as doctor_mod
+from . import sender as sender_mod
 from .config import Config, ConfigError, find_config_file
 from .config import load as load_config
+from .encoders import EncoderError
 from .ffmpeg import FFmpegError
+from .sender import SenderError
 
 app = typer.Typer(
     add_completion=False,
@@ -49,7 +52,7 @@ def _guard(fn, *args):
     """
     try:
         return fn(*args)
-    except (ConfigError, FFmpegError) as exc:
+    except (ConfigError, FFmpegError, EncoderError, SenderError) as exc:
         typer.secho(f"erro: {exc}", fg="red", err=True)
         raise typer.Exit(2) from None
 
@@ -71,6 +74,65 @@ def _root(
 def doctor(config: ConfigOption = None) -> None:
     """Diagnostica este lado: ffmpeg, encoders, captura, SRT, rede e firewall."""
     sys.exit(_guard(doctor_mod.run, _load(config)))
+
+
+@app.command()
+def send(
+    config: ConfigOption = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Só imprime o comando montado, não executa.")
+    ] = False,
+    encoder: Annotated[
+        str, typer.Option("--encoder", help="Força o encoder (ex.: hevc_nvenc). Ignora a cadeia.")
+    ] = "",
+    bitrate: Annotated[
+        str, typer.Option("--bitrate", help='Sobrescreve o bitrate do vídeo (ex.: "12M").')
+    ] = "",
+) -> None:
+    """Captura a tela do Windows e publica em SRT. Ctrl+C encerra."""
+    cfg = _load(config)
+    if bitrate:
+        cfg.video.bitrate = bitrate
+        _guard(cfg.video.validate)
+
+    note = _guard(sender_mod.check_platform, dry_run)
+    # Fora do Windows o ffmpeg local não é o que vai rodar: exigir que ele exista
+    # transformaria "me mostre o comando" numa dependência de ambiente.
+    plan = _guard(sender_mod.plan_for, cfg, encoder, not note)
+
+    if note:
+        typer.secho(note, fg="yellow", err=True)
+    for line in sender_mod.summary(cfg, plan):
+        typer.secho("  " + line, fg="cyan")
+    typer.echo("")
+    typer.echo(plan.shell_line)
+    typer.echo("")
+
+    if dry_run:
+        return
+
+    typer.secho(
+        "No Mac: Media Source no OBS com "
+        + cfg.network.url_for_ffmpeg(mode="caller", host=cfg.network.host or "<ip-deste-pc>")
+        + "\nCtrl+C encerra.",
+        fg="green",
+    )
+    code = _guard(sender_mod.run, plan, _echo_ffmpeg)
+    # 255 é como o ffmpeg reporta "recebi SIGINT e saí" — encerramento pedido pelo
+    # usuário não é falha, e sair 255 daqui faria um script de sessão achar que foi.
+    raise typer.Exit(0 if code in (0, 255) else 1)
+
+
+def _echo_ffmpeg(line: str, is_progress: bool) -> None:
+    """Progresso se reescreve na mesma linha; o resto rola normalmente."""
+    if is_progress:
+        typer.echo(f"\r{line}", nl=False)
+    else:
+        typer.echo(("\n" if _echo_ffmpeg.pending else "") + line)
+    _echo_ffmpeg.pending = is_progress
+
+
+_echo_ffmpeg.pending = False
 
 
 @config_app.command("show")

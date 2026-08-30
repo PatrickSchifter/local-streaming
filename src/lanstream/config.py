@@ -94,7 +94,12 @@ class VideoConfig:
     codec: str = "hevc"
     encoder: str = ""
     monitor: int = 0
-    preset: str = "p5"
+
+    # Vazio = o default da família do encoder escolhido (p5 no NVENC, "quality"
+    # no AMF, "veryfast" no x264). Não dá para ter um default global: cada
+    # fabricante nomeia o preset do seu jeito, e "p5" num libx264 é um erro. Quem
+    # valida o valor contra a família é o encoders.preset_args().
+    preset: str = ""
 
     def validate(self) -> None:
         if self.codec not in CODECS:

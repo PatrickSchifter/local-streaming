@@ -59,8 +59,13 @@ encoder = ""
 # Índice do monitor para o ddagrab.
 monitor = 0
 
-# Preset do NVENC. p5 = "slow" na escala nova; validado na Fase 0.
-preset = "p5"
+# Vazio = o default da família do encoder escolhido: "p5" no NVENC (validado na
+# Fase 0 — do p1 ao p5 é 1 fps de diferença, só o p7 cobra caro), "quality" no
+# AMF, "medium" no QSV, "veryfast" no libx264/libx265.
+#
+# Um preset explícito é conferido contra a família: "veryfast" num hevc_nvenc é
+# erro na hora, não um default silencioso descoberto três dias depois.
+preset = ""
 
 [audio]
 # Fase 3. A máquina do Windows não tem nenhum device de loopback (baseline §2),

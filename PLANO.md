@@ -173,6 +173,11 @@ local-streaming/
 > URLs precisam) e `peer` (a outra ponta, que o alcance precisa) são campos
 > separados, e a correção rendeu uma checagem nova — o doctor agora percebe que o
 > IP do sender mudou (`docs/fase1.md` §1).
+>
+> 🟡 **Fase 2 em verificação** (2026-08-29). O `lanstream send` monta o mesmo
+> comando que a Fase 0 validou na mão e encerra sem deixar ffmpeg órfão. O que
+> não dá para testar no Mac — `ddagrab`, NVENC e o Ctrl+C do console do Windows —
+> está listado como pendente em [`docs/fase2.md`](docs/fase2.md) §5.
 
 ## 4. Fases
 
@@ -264,19 +269,47 @@ lento) ou rodar OBS no Windows só como capturador. Descobrir isso na Fase 0, n�
       passa a ser gerada para valer aqui, e um campo ambíguo alimentando-a era
       defeito esperando acontecer. As quatro combinações de `host`/`peer` nos dois
       SOs foram exercitadas (`docs/fase1.md` §1).
-- [ ] `encoders.py`: detectar e escolher encoder por cadeia de fallback
+- [x] `encoders.py`: detectar e escolher encoder por cadeia de fallback
       `hevc_nvenc → h264_nvenc → hevc_amf → h264_amf → hevc_qsv → h264_qsv → libx264`,
-      com override no config.
-- [ ] `sender.py`: montar o argv do ffmpeg a partir da config —
+      com override no config. Não abre processo nenhum — recebe o conjunto de
+      encoders e decide —, o que permite montar o comando do Windows a partir do
+      Mac. Trouxe junto **as flags por família**: `-preset p5` (NVENC),
+      `-quality quality` (AMF), `-preset medium` (QSV), `-preset veryfast` (x264).
+- [x] **`[video] preset` perdeu o default global.** Consequência do item acima: o
+      `preset = "p5"` só estava certo porque esta máquina tem NVIDIA. Agora vazio
+      = o default da família, e um valor explícito é conferido contra ela — o
+      ffmpeg aceitaria `-preset veryfast` num `hevc_nvenc` e cairia num default
+      silencioso (`docs/fase2.md` §2). O `doctor` ganhou a checagem.
+- [x] `sender.py`: montar o argv do ffmpeg a partir da config —
       `ddagrab` (monitor selecionável, framerate, `-c:v` + `-preset`/`-rc cbr`
       `-b:v`/`-maxrate`/`-bufsize`, `-g` = 2×fps, `-f mpegts`, URL SRT listener).
-- [ ] Escala opcional na GPU (`scale_cuda`/`scale_d3d11`) — jogar em 1440p e
-      transmitir 1080p sem custo de CPU.
-- [ ] `lanstream send` — inicia, faz streaming do stderr do ffmpeg para o log,
+      O comando montado é **idêntico ao do `win-test-video.ps1` da Fase 0**, com
+      uma flag a mais (`-nostdin`, porque agora há um supervisor no meio).
+- [x] ~~Escala opcional na GPU (`scale_cuda`/`scale_d3d11`)~~ — **não se aplica,
+      por dois motivos independentes:** o build não deriva device CUDA do D3D11
+      (`scale_cuda` dá ENOSYS, `scale_d3d11` não configura o pad — baseline §2) e
+      não há o que escalar, porque o `ddagrab` captura o monitor e o monitor é
+      1080p60. Sobraria escalar na CPU, que é o custo que o item existia para
+      evitar (`docs/fase2.md` §3). Reavaliar só se o monitor mudar.
+- [x] `lanstream send` — inicia, faz streaming do stderr do ffmpeg para o log,
       e encerra limpo no Ctrl+C (SIGINT propagado, sem ffmpeg órfão segurando a porta).
-- [ ] `lanstream send --dry-run` imprime o comando montado sem executar.
+      Medido com fonte sintética e SIGINT no grupo de processos: sai em 0.12 s,
+      sem sobrevivente (`docs/fase2.md` §4). O ffmpeg **não** vai para um grupo
+      próprio — é o que faz o Ctrl+C chegar nele.
+- [x] `lanstream send --dry-run` imprime o comando montado sem executar. Roda
+      fora do Windows de propósito: é como se confere o comando de lá sentado
+      aqui, e nesse caso o ffmpeg local não é consultado (a resposta dele seria
+      pior que nenhuma).
+- [ ] **Rodar o `send` no Windows**, com o OBS do Mac como Media Source. É o
+      critério de saída, e é o que falta.
 
 **Saída:** `lanstream send` no Windows + Media Source no Mac = jogo na tela do OBS.
+
+> **Onde está:** 🟡 **Código pronto e verificado no que não depende do Windows**
+> (cadeia de fallback, presets por família, dry-run, Ctrl+C sem órfão, invariante
+> do `example.toml`) — `docs/fase2.md` §5 tem a tabela. Falta a rodada real: o
+> `ddagrab` e o NVENC não existem no Mac, e o `CTRL_C_EVENT` do Windows percorre
+> um caminho diferente do SIGINT testado aqui.
 
 ---
 

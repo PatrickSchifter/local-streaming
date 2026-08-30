@@ -40,33 +40,6 @@ KNOWN_DIRS: tuple[Path, ...] = (
     else (Path("/opt/homebrew/bin"), Path("/usr/local/bin"), Path("/usr/bin"))
 )
 
-# Cadeia de fallback da Fase 2. Ordem = preferência.
-ENCODER_CHAIN: tuple[str, ...] = (
-    "hevc_nvenc",
-    "h264_nvenc",
-    "hevc_amf",
-    "h264_amf",
-    "hevc_qsv",
-    "h264_qsv",
-    "hevc_videotoolbox",
-    "h264_videotoolbox",
-    "libx265",
-    "libx264",
-)
-
-# Qual encoder entrega qual codec. Não dá para deduzir do nome: `libx265` é HEVC
-# e não começa com "hevc", e concluir o contrário faria o doctor dizer que o
-# codec pedido não foi atendido quando foi.
-CODEC_FAMILIES: dict[str, tuple[str, ...]] = {
-    "hevc": ("hevc_nvenc", "hevc_amf", "hevc_qsv", "hevc_videotoolbox", "libx265"),
-    "h264": ("h264_nvenc", "h264_amf", "h264_qsv", "h264_videotoolbox", "libx264"),
-}
-
-
-def codec_of(encoder: str) -> str | None:
-    """Codec que este encoder produz, ou None se for um nome desconhecido."""
-    return next((codec for codec, names in CODEC_FAMILIES.items() if encoder in names), None)
-
 
 def _parse_listing(output: str) -> set[str]:
     """Nomes de uma listagem `-encoders` / `-filters`.
@@ -98,9 +71,6 @@ def _parse_listing(output: str) -> set[str]:
         if len(fields) >= 2:
             names.add(fields[1])
     return names
-
-
-_HW_ENCODER_RE = re.compile(r"nvenc|_amf|_qsv|videotoolbox")
 
 
 class FFmpegError(Exception):
@@ -177,24 +147,6 @@ class FFmpegInfo:
         """
         match = re.fullmatch(r"(\d+)\.(\d+)(?:\.(\d+))?", self.version)
         return tuple(int(g) for g in match.groups() if g) if match else ()
-
-    def hardware_encoders(self) -> list[str]:
-        return sorted(e for e in self.encoders if _HW_ENCODER_RE.search(e))
-
-    def pick_encoder(self, codec: str = "hevc", override: str = "") -> str:
-        """Escolhe o encoder pela cadeia de fallback, preferindo o codec pedido."""
-        if override:
-            if override not in self.encoders:
-                raise FFmpegError(
-                    f"encoder {override!r} não existe neste ffmpeg.\n"
-                    f"  Disponíveis por hardware: {', '.join(self.hardware_encoders()) or 'nenhum'}"
-                )
-            return override
-        preferred = [e for e in ENCODER_CHAIN if e in CODEC_FAMILIES.get(codec, ())]
-        for candidate in preferred + [e for e in ENCODER_CHAIN if e not in preferred]:
-            if candidate in self.encoders:
-                return candidate
-        raise FFmpegError("nenhum encoder de vídeo utilizável neste ffmpeg")
 
 
 def probe(binary: Path) -> FFmpegInfo:

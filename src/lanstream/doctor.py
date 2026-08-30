@@ -21,6 +21,7 @@ from enum import Enum
 
 import typer
 
+from . import encoders as enc
 from . import ffmpeg as ff
 from .config import Config
 
@@ -192,7 +193,7 @@ def check_ffmpeg(report: Report, cfg: Config) -> ff.FFmpegInfo | None:
             '"Cannot load nvEncodeAPI64.dll" ou "InitializeEncoder failed", é isto.',
         )
 
-    hw = _ask(report, "encoders de hardware", info.hardware_encoders)
+    hw = _ask(report, "encoders de hardware", lambda: enc.hardware_encoders(info.encoders))
     if hw is None:
         return info
     if hw:
@@ -219,12 +220,12 @@ def check_ffmpeg(report: Report, cfg: Config) -> ff.FFmpegInfo | None:
 
     codec = cfg.video.codec
     try:
-        chosen = info.pick_encoder(codec, cfg.video.encoder)
-    except ff.FFmpegError as exc:
+        chosen = enc.pick(info.encoders, codec, cfg.video.encoder)
+    except (ff.FFmpegError, enc.EncoderError) as exc:
         report.add(Level.FAIL, "encoder escolhido", str(exc).splitlines()[0])
     else:
         # `libx265` é HEVC apesar do nome: quem decide é a família, não o prefixo.
-        level = Level.OK if ff.codec_of(chosen) == codec else Level.WARN
+        level = Level.OK if enc.codec_of(chosen) == codec else Level.WARN
         detail = chosen if level is Level.OK else f"{chosen} — o codec pedido era {codec}"
         report.add(
             level,
@@ -235,6 +236,21 @@ def check_ffmpeg(report: Report, cfg: Config) -> ff.FFmpegInfo | None:
             else "HEVC é requisito, não preferência: é ele que faz 1080p60 caber\n"
             "em 15 Mbps neste caminho (PLANO §3.3).",
         )
+        # O preset é da família, não global: "veryfast" num hevc_nvenc o ffmpeg
+        # aceita e ignora. Melhor descobrir aqui do que estranhar a qualidade
+        # depois de meia hora no ar.
+        try:
+            args = enc.preset_args(chosen, cfg.video.preset)
+        except enc.EncoderError as exc:
+            message, _, hint = str(exc).partition("\n")
+            report.add(Level.FAIL, "preset", message, hint.strip())
+        else:
+            report.add(
+                Level.OK,
+                "preset",
+                " ".join(args) or "o encoder não tem preset",
+                "" if cfg.video.preset else "(default da família — [video] preset está vazio)",
+            )
     return info
 
 
