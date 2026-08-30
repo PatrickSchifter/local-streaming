@@ -157,15 +157,55 @@ O ponto do §4 se confirma no SO que ele descreve: **herdar o grupo do console �
 que faz o Ctrl+C chegar no ffmpeg no Windows também.** O `CREATE_NEW_PROCESS_GROUP`
 continua sendo a escolha errada, agora por medição nas duas plataformas.
 
-**Ainda não verificado — é o que segura o critério de saída da fase**
-(passo F2.3 do protocolo):
+**Verificado em 30/08 — o critério de saída da fase está batido** (passo F2.3):
 
-- [ ] `lanstream send` rodando no Windows, com o OBS do Mac como Media Source.
-      O que falta a rodada confirmar: o `ddagrab` entregando frame **com o
-      receptor conectado**, e os fps com jogo real (a Fase 0 mediu 55–58 com a
-      tela em movimento e deixou o caso do fullscreen exclusivo em aberto). As
-      rodadas de 30/08 foram curtas, com a tela parada e sem ninguém do outro
-      lado — não medem nem fps nem bitrate, e não valem como F2.3.
+- [x] `lanstream send` rodando no Windows, com o OBS do Mac como Media Source.
+      Resident Evil 2 remake em **borderless**, 3 minutos: 57.1 fps instantâneos,
+      14.5–15.2 Mbps sustentados, `speed` 1.000x, `drop=0` em 10.056 frames,
+      nenhum erro no log, imagem confirmada no OBS do Mac, Ctrl+C em 0.60 s sem
+      órfão. Números e ressalvas em `proximos-testes.md` §F2.3.
+
+Fica registrado o que **não** foi coletado: os contadores do lado do Mac
+(`RCV-DROPPED`, erros de decode, fps recebido). A imagem foi confirmada a olho.
+`drop=0` no sender é bom sinal e não substitui o receptor — foi exatamente essa
+a lacuna do `baseline` §4d.
+
+## 8. ⛔ Fullscreen exclusivo derruba a captura — a restrição que a fase descobriu
+
+A primeira tentativa do F2.3 não chegou a envolver a rede: o sender morreu
+sozinho 4.28 s depois de subir, no instante em que o jogo entrou em fullscreen
+exclusivo.
+
+```
+[Parsed_ddagrab_0] AcquireNextFrame failed: 887a0026
+[fc#0] Error requesting a frame from the filtergraph: Generic error in an external library
+Conversion failed!
+```
+
+`0x887A0026` é `DXGI_ERROR_ACCESS_LOST`: em fullscreen exclusivo o jogo sai do
+compositor do Windows e a Desktop Duplication daquele monitor deixa de existir.
+O `ddagrab` trata como fatal, e **não há opção de filtro para reinicializar** —
+`ffmpeg -h filter=ddagrab` oferece `output_idx`, `draw_mouse`, `framerate`,
+`video_size`, `offset_x/y`, `output_fmt`, `allow_fallback`, `force_fmt` e
+`dup_frames`, e mais nada. Não foi troca de resolução: o desktop seguiu
+1920x1080@60 durante e depois.
+
+Três consequências:
+
+1. **Borderless é o modo suportado**, e isso entra na documentação do projeto,
+   não numa nota de rodapé. É a saída que o T3 já previa.
+2. **Em exclusivo, qualquer alt-tab reproduz o mesmo erro** — não é um evento
+   único da entrada no jogo. Foi por isso que a segunda rodada subiu o sender com
+   `CREATE_NO_WINDOW`: uma janela de console nova roubaria o foco do jogo, que é
+   a própria transição que mata a captura.
+3. **A Fase 5 ganhou um motivo que não era o previsto.** O `--watch` existia para
+   reconexão do OBS; o `ACCESS_LOST` é um modo de falha que aparece **sozinho**,
+   sem ninguém desconectar nada, e um supervisor que reergue o ffmpeg cobre os
+   dois.
+
+O que **não** está medido, e não vou escrever que está: subir o sender com o jogo
+**já** em fullscreen exclusivo. O medido é que a *transição* mata uma captura em
+andamento.
 
 ## 6. Revisão de código: cinco defeitos, dois deles em promessas escritas
 

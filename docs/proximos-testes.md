@@ -46,17 +46,19 @@ que roda a 60 fps dentro desse teto.
 
 ---
 
-## F2 — `lanstream send` no Windows 🟡 **4 de 5 passaram; falta o F2.3**
+## F2 — `lanstream send` no Windows ✅ **os cinco passaram — Fase 2 fechada em 30/08**
 
 O código está escrito e verificado no que não depende do Windows (`docs/fase2.md`
 §5). Três coisas só esta máquina responde: o `ddagrab`, o NVENC, e o **Ctrl+C do
 console do Windows** — o teste daqui foi um SIGINT em POSIX, e o `CTRL_C_EVENT`
 percorre outro caminho.
 
-> **Rodado em 30/08.** Das três, duas já responderam: o NVENC é escolhido e monta o
-> comando da Fase 0 (F2.1/F2.2), e o `CTRL_C_EVENT` do Windows encerra o ffmpeg
-> limpo, sem órfão, sem `terminate` (F2.4/F2.5). Falta o `ddagrab` **com o OBS do
-> outro lado**, que é o F2.3.
+> **Rodado em 30/08, e as três responderam.** O NVENC é escolhido e monta o
+> comando da Fase 0 (F2.1/F2.2); o `CTRL_C_EVENT` do Windows encerra o ffmpeg
+> limpo, sem órfão, sem `terminate` (F2.4/F2.5); e o `ddagrab` entregou o jogo com
+> o OBS do Mac do outro lado (F2.3) — **em borderless**. Em fullscreen exclusivo a
+> captura morre com `DXGI_ERROR_ACCESS_LOST`, que é o achado do §F2.3-bis e a
+> única restrição nova que a fase produziu.
 
 São cinco passos. Os quatro primeiros levam ~2 minutos e **não precisam de mim do
 outro lado**; só o F2.3 precisa do OBS aberto no Mac.
@@ -182,6 +184,127 @@ com `Input Format = mpegts` e "Local File" desmarcado — a receita da Fase 0
 (`baseline` §5). Se o IP do Windows tiver mudado desde então, o F2.1 acusa antes
 deste passo.
 
+
+> ## ✅ Passou em 30/08 — na segunda tentativa, e a primeira ensinou mais que a segunda
+>
+> **Jogo:** Resident Evil 2 (remake, RE Engine) — o jogo 3D moderno que o T3
+> deixou em aberto. **Modo: borderless, 1920x1080.** Ver o §F2.3-bis logo abaixo
+> para o motivo de não ser fullscreen exclusivo.
+>
+> | O quê | Medido | Referência |
+> |---|---|---|
+> | Encoder | `hevc_nvenc` | `hevc_nvenc` |
+> | fps **instantâneo** (janela 117.6s→177.4s) | **57.1** | 54–58, média 56.2 |
+> | faixa de fps ao longo da corrida | 55.9–57.7, sem tendência de queda | — |
+> | bitrate **instantâneo** | **14.5–15.2 Mbps sustentados** | T1 deu 1.67, T3 deu 9.6 |
+> | `speed` | 0.999 → 1.000x | ~1.000x |
+> | `drop` / `dup` | **0 / 0** em 10.056 frames | 0 |
+> | duração | 177.4 s de mídia, sem erro no log | — |
+> | Ctrl+C no fim | 0.60 s, sem órfão, porta livre | 0.11 s (Mac) |
+> | Imagem no OBS do Mac | ✅ **confirmada** | — |
+>
+> **Esta é a primeira rodada do projeto que de fato estressa o teto de ~17 Mbps
+> do §4e.** O T1 pediu 15M e entregou 1.67 (tela parada, §4f) e o T3 entregou 9.6
+> (jogo 4:3 pré-renderizado de 30 fps). Com o RE2 a 14.5–15.2 Mbps sustentados o
+> `-b:v 15M` finalmente virou piso e teto ao mesmo tempo — e o sender não freou.
+>
+> ⚠️ **O que ainda falta desta rodada:** os contadores do lado do Mac. A imagem
+> foi confirmada visualmente, mas `RCV-DROPPED`, erros de decode e fps recebido
+> **não foram coletados**. O sender viu `drop=0`, o que é bom sinal e não é prova:
+> sender feliz com receptor sofrendo foi exatamente o buraco do §4d. Se o Mac
+> ainda tiver as estatísticas da sessão, valem a pena — se não, ficam para a
+> próxima rodada longa.
+>
+> <details>
+> <summary><b>Série temporal completa da rodada</b> — amostra a cada 10 s, fps e bitrate instantâneos</summary>
+>
+> ```
+> [   10s] midia=  7.21s  fps_inst= 57.7   2.48 Mbps  speed=0.992x  drop=0
+> [   20s] midia= 17.01s  fps_inst= 56.5  13.00 Mbps  speed=0.996x  drop=0
+> [   30s] midia= 27.31s  fps_inst= 56.5  14.34 Mbps  speed=0.998x  drop=0
+> [   40s] midia= 37.11s  fps_inst= 55.9  14.37 Mbps  speed=0.999x  drop=0
+> [   50s] midia= 46.91s  fps_inst= 56.1  14.67 Mbps  speed=0.999x  drop=0
+> [   60s] midia= 57.22s  fps_inst= 56.6  14.36 Mbps  speed=0.999x  drop=0
+> [   70s] midia= 67.02s  fps_inst= 56.3  14.53 Mbps  speed=0.999x  drop=0
+> [   80s] midia= 77.33s  fps_inst= 56.4  14.49 Mbps  speed=0.999x  drop=0
+> [   90s] midia= 87.13s  fps_inst= 56.5  14.47 Mbps  speed=0.999x  drop=0
+> [  100s] midia= 96.95s  fps_inst= 57.0  14.68 Mbps  speed=0.999x  drop=0
+> [  110s] midia=107.26s  fps_inst= 56.5  14.66 Mbps  speed=0.999x  drop=0
+> [  120s] midia=117.06s  fps_inst= 56.6  14.32 Mbps  speed=0.999x  drop=0
+> [  130s] midia=127.36s  fps_inst= 56.8  14.56 Mbps  speed=1.0x    drop=0
+> [  140s] midia=137.15s  fps_inst= 57.2  14.79 Mbps  speed=1.0x    drop=0
+> [  150s] midia=146.96s  fps_inst= 56.4  14.47 Mbps  speed=1.0x    drop=0
+> [  160s] midia=157.27s  fps_inst= 57.1  14.72 Mbps  speed=1.0x    drop=0
+> [  170s] midia=167.07s  fps_inst= 57.4  14.62 Mbps  speed=1.0x    drop=0
+> [  180s] midia=177.38s  fps_inst= 57.5  15.20 Mbps  speed=1.0x    drop=0
+> ```
+>
+> A primeira amostra (2.48 Mbps) é o intervalo antes de o jogo estar desenhando —
+> a partir dos 20 s o bitrate estabiliza em 14.3–15.2 e **não sobe nem desce** ao
+> longo dos 3 minutos. O `speed` sobe de 0.992x para 1.000x e fica: é o transiente
+> de início, o mesmo padrão do §4h. Nenhuma amostra abaixo de 55.9 fps.
+>
+> Cada linha é `Δframe ÷ Δelapsed` entre amostras consecutivas do próprio ffmpeg —
+> não o `fps=` dele, que é média acumulada (regra 6).
+>
+> </details>
+>
+> 🟢 **A ressalva do uTorrent se resolveu com número.** Ele ficou aberto,
+> limitado a 25 KB/s de upload (a regra 2 pede fechado). Contadores da interface
+> no período dos testes: **346.2 MB enviados** contra **326.9 MB do próprio
+> stream**, e 8.4 MB recebidos. Sobram ~19 MB para a rodada que falhou, o
+> overhead de TS/SRT e o torrent — ou seja, terceiros na casa de **0.2 Mbps
+> contra 14.7 Mbps do stream**. Não contaminou a medição.
+
+### F2.3-bis — fullscreen exclusivo derruba a captura ❌ **achado novo, é o mais importante do dia**
+
+A **primeira** tentativa do F2.3 falhou, e não por rede: o sender morreu sozinho
+4.28 s depois de subir, no instante exato em que o RE2 entrou em fullscreen
+exclusivo. O OBS do Mac nunca teve o que receber porque não havia mais sender.
+
+```
+[Parsed_ddagrab_0] AcquireNextFrame failed: 887a0026
+[Parsed_ddagrab_0] EOF timestamp not reliable
+[fc#0] Error requesting a frame from the filtergraph: Generic error in an external library
+[out#0/mpegts] video:2063KiB ... muxing overhead: 4.393630%
+Conversion failed!
+```
+
+`0x887A0026` é **`DXGI_ERROR_ACCESS_LOST`**. Em fullscreen exclusivo o jogo toma
+o display para si e sai do compositor (DWM); a Desktop Duplication daquele
+monitor deixa de existir, e o `ddagrab` trata isso como fatal.
+
+O que foi descartado como causa, para o achado não virar folclore:
+
+| Hipótese | Verificado |
+|---|---|
+| O jogo trocou a resolução/refresh | ❌ desktop seguiu **1920x1080@60** durante e depois (`Win32_VideoController`) |
+| O `ddagrab` captura janela e perdeu a janela | ❌ ele duplica o **monitor inteiro**; não existe captura de janela aqui |
+| Dá para pedir reinicialização ao filtro | ❌ `ffmpeg -h filter=ddagrab`: só `output_idx`, `draw_mouse`, `framerate`, `video_size`, `offset_x/y`, `output_fmt`, `allow_fallback`, `force_fmt`, `dup_frames`. Nada de recuperar acesso |
+| Foi o console do sender roubando o foco | 🟡 provável agravante — a rodada 2 subiu com `CREATE_NO_WINDOW` justamente por isso |
+
+**Em borderless o problema não existe:** o jogo volta a desenhar através do DWM,
+o `ddagrab` pega a tela inteira, e a rodada de 3 minutos acima passou sem um
+único erro. O alt-tab também deixa de derrubar a captura — o que importa na
+prática, porque em exclusivo **qualquer** troca de foco reproduz o mesmo
+`ACCESS_LOST`.
+
+**O que isto decide:** borderless é o modo suportado pelo projeto, e isso é uma
+restrição documentada — exatamente a saída que o T3 previa ("se só borderless
+funcionar, vira restrição documentada"). Não é o Plano B do §6 do PLANO: a
+captura de jogo 3D moderno **funciona**, só não no modo exclusivo.
+
+**O que isto NÃO decide, para não superestimar o achado:** não foi testado subir
+o sender com o jogo **já** em fullscreen exclusivo. O que está medido é que a
+*transição* para exclusivo mata uma captura em andamento. É possível que a DDA
+consiga duplicar um exclusivo que já estava lá — não sei, e não vou escrever que
+sei.
+
+**Consequência para a Fase 5:** o `--watch` deixa de ser só conforto para
+reconexão do OBS. Um supervisor que reergue o ffmpeg cobre também o `ACCESS_LOST`
+— que é o modo de falha que aparece sozinho, sem ninguém desconectar nada.
+
+
 ### F2.4 — Ctrl+C: o que só o Windows responde 🔴
 
 Este é o passo que existe por causa de uma lacuna conhecida, não por
@@ -255,15 +378,22 @@ importa**. Se não subir, o F2.4 mentiu e é lá que está o defeito.
 |---|---|---|
 | F2.1 doctor (11 checagens) | não | ✅ 11 OK, código 0 — depois de corrigir o `host` do toml |
 | F2.2 dry-run == Fase 0 | não | ✅ idêntico, só o `-nostdin` a mais |
-| F2.3 jogo no OBS | **sim** | ⏳ **pendente — é o único que falta para fechar a fase** |
+| F2.3 jogo no OBS | **sim** | ✅ RE2 borderless, 57.1 fps inst., 14.7 Mbps, drop=0, imagem no OBS |
 | F2.4 Ctrl+C limpo | não | ✅ 0.27–0.67 s, `signal 2` tratado, zero órfão |
 | F2.5 duas rodadas seguidas | não | ✅ a segunda sobe na hora |
 
 Os cinco passando = **Fase 2 fechada**, e a Fase 3 (áudio) começa — que é a que
 exige instalar driver e reiniciar a máquina.
 
-**Estado em 30/08:** quatro passaram, o F2.3 está de pé esperando o Mac. Tudo que
-esta máquina respondia sozinha, respondeu.
+**Estado em 30/08: os cinco passaram — a Fase 2 está fechada.** A Fase 3 (áudio)
+pode começar.
+
+Duas coisas saem daqui e não cabem no ✅:
+
+1. **Borderless virou requisito**, não preferência (§F2.3-bis). Fullscreen
+   exclusivo derruba a captura com `DXGI_ERROR_ACCESS_LOST`.
+2. **Os contadores do Mac do F2.3 não foram coletados** — a imagem foi confirmada
+   a olho. Não bloqueia a fase, mas é a metade do §4d que continua faltando.
 
 > 🟡 **Uma observação para o F2.3, não um defeito.** Nas rodadas de ~5 s **sem
 > receptor conectado** o ffmpeg registrou `dup=0 drop=1` — um frame em 284 — e
@@ -322,7 +452,16 @@ preflight antes de subir o sender na Fase 2.
 
 ---
 
-## T1 — HEVC a 15 Mbps ⚠️ executado em 29/08, **inconclusivo — refazer**
+## T1 — HEVC a 15 Mbps ✅ **respondido em 30/08 pelo F2.3, do lado do sender**
+
+> **O refazer aconteceu, embutido no F2.3.** Com o RE2 em borderless o caminho
+> carregou **14.5–15.2 Mbps sustentados** por 3 minutos com o sender em **57.1 fps
+> instantâneos, speed 1.000x e `drop=0`** — o cenário do "Sender em 57–58 fps /
+> speed ~0.99x" que esta tabela define como configuração de produção. O que falta
+> para bater o critério inteiro é o "receptor em 0 drops": os contadores do Mac
+> não foram coletados. **15M CBR é o default de produção**, com essa ressalva.
+
+## T1 (registro original) — ⚠️ executado em 29/08, **inconclusivo — refazer**
 
 > **Rodado. Não decidiu nada.** Sender deu `fps=52 speed=0.995x` em 37 s, mas o
 > stream carregou só **1.67 Mbps** — desktop parado, e o `hevc_nvenc` em CBR não
@@ -372,7 +511,16 @@ está confirmado por um terceiro método e o T1 vira o default definitivo.
 
 ---
 
-## T3 — Jogo real ✅ **executado em 29/08 — a DDA captura**
+## T3 — Jogo real ✅ **fechado em 30/08 — o jogo 3D moderno era o que faltava**
+
+> **O pendente do T3 caiu junto com o F2.3.** Resident Evil 2 remake (RE Engine),
+> 3 minutos, 14.5–15.2 Mbps sustentados, 57.1 fps instantâneos, `drop=0`, imagem
+> confirmada no OBS do Mac. O `ddagrab` captura jogo 3D moderno — **em
+> borderless**. Em fullscreen exclusivo, não: `DXGI_ERROR_ACCESS_LOST` mata a
+> captura na transição (§F2.3-bis). Anti-cheat continua não testado — o RE2
+> single-player não carrega nenhum.
+
+## T3 (registro original) — ✅ **executado em 29/08 — a DDA captura**
 
 > **Risco existencial eliminado** (§4g): o `ddagrab` entregou frame de jogo por 3
 > minutos, confirmado visualmente. Mas o título testado (Resident Evil clássico:
@@ -455,7 +603,9 @@ default não custa nada. Fica registrado para não parecer esquecido.
 
 | Teste | Codec | Bitrate | Buffer | fps sender | speed | drops (Mac) | erros decode | Veredito |
 |---|---|---|---|---|---|---|---|---|
-| T1 | hevc | 15M | 1200 | 52 | 0.995x | não medido | não medido | ⚠️ inconclusivo — só 1.67 Mbps no caminho (§4f) |
+| F2.3 | hevc | 15M | 1200 | **57.1 inst.** | 1.000x | não medido | não medido | ✅ **RE2 borderless, 3 min, 14.5–15.2 Mbps, drop=0, imagem no OBS** |
+| F2.3-bis | hevc | 15M | 1200 | — | — | — | — | ❌ fullscreen exclusivo: `DXGI_ERROR_ACCESS_LOST` aos 4.3 s |
+| T1 | hevc | 15M | 1200 | 52 | 0.995x | não medido | não medido | ⚠️ inconclusivo — só 1.67 Mbps no caminho (§4f) — **respondido pelo F2.3** |
 | T2 | hevc | 20M | 1200 | | | | | |
 | T3 | hevc | 15M | 1200 | 52 | 0.999x | **0** | **0** | ✅ DDA captura o jogo (§4g). 155k pacotes, perda zero. Média 9.6 Mbps, pico 15.1 |
 | T4 | hevc | 15M | 1200 | 56 (56.2 inst.) | 1.000x | **0** | **0** | ✅ **10:26 contínuos, 508k pacotes, perda zero, sem deriva (§4h)** |

@@ -174,12 +174,20 @@ local-streaming/
 > separados, e a correção rendeu uma checagem nova — o doctor agora percebe que o
 > IP do sender mudou (`docs/fase1.md` §1).
 >
-> 🟡 **Fase 2 — 4 dos 5 passos passaram** (2026-08-30). O `lanstream send` monta
-> no Windows exatamente o comando que a Fase 0 validou na mão, e o `CTRL_C_EVENT`
-> do console encerra o ffmpeg em 0.27–0.67 s sem órfão na porta 9000 — a decisão
-> de herdar o grupo do console está medida nas duas plataformas agora.
-> **Falta só o F2.3**, a rodada com o OBS do Mac do outro lado, que é o critério
-> de saída. Passo a passo em [`docs/proximos-testes.md`](docs/proximos-testes.md) §F2.
+> ✅ **Fase 2 CONCLUÍDA** (2026-08-30). O `lanstream send` monta no Windows
+> exatamente o comando que a Fase 0 validou na mão, o `CTRL_C_EVENT` do console
+> encerra o ffmpeg em 0.27–0.67 s sem órfão na porta 9000, e a rodada real
+> entregou **Resident Evil 2 remake para o OBS do Mac: 3 minutos, 57.1 fps
+> instantâneos, 14.5–15.2 Mbps sustentados, `drop=0` em 10.056 frames**. É a
+> primeira rodada do projeto que de fato estressa o teto de ~17 Mbps do
+> `baseline` §4e — o T1 pedia isso desde 29/08 e nunca tinha conseguido.
+> Registro em [`docs/fase2.md`](docs/fase2.md).
+>
+> ⛔ **A fase produziu uma restrição:** a captura só funciona com o jogo em
+> **borderless**. Em fullscreen exclusivo o `ddagrab` morre com
+> `DXGI_ERROR_ACCESS_LOST` (`docs/fase2.md` §8) — e, ao contrário do que este
+> plano supunha, **não é mudança de resolução**: o desktop seguiu 1920x1080@60.
+> Ver o item corrigido na Fase 5.
 
 ## 4. Fases
 
@@ -297,7 +305,14 @@ lento) ou rodar OBS no Windows só como capturador. Descobrir isso na Fase 0, n�
       e encerra limpo no Ctrl+C (SIGINT propagado, sem ffmpeg órfão segurando a porta).
       Medido com fonte sintética e SIGINT no grupo de processos: sai em 0.12 s,
       sem sobrevivente (`docs/fase2.md` §4). O ffmpeg **não** vai para um grupo
-      próprio — é o que faz o Ctrl+C chegar nele.
+      próprio — é o que faz o Ctrl+C chegar nele. **Confirmado no Windows real**
+      em 30/08 com o `CTRL_C_EVENT` do console: 0.27–0.67 s, sem órfão, e o
+      `send` seguinte sobe na hora (`docs/fase2.md` §5).
+- [x] **Critério de saída batido:** rodada real com o OBS do Mac como Media
+      Source — RE2 remake em borderless, 3 min, 57.1 fps instantâneos, 14.5–15.2
+      Mbps, `speed` 1.000x, `drop=0`, imagem confirmada do outro lado. Os
+      contadores do lado do Mac (`RCV-DROPPED`, decode) não foram coletados; fica
+      como dívida, não como bloqueio (`docs/proximos-testes.md` §F2.3).
 - [x] `lanstream send --dry-run` imprime o comando montado sem executar. Roda
       fora do Windows de propósito: é como se confere o comando de lá sentado
       aqui, e nesse caso o ffmpeg local não é consultado (a resposta dele seria
@@ -380,8 +395,15 @@ Aqui o projeto para de ser "dois comandos" e vira algo que aguenta uma sessão r
 
 - [ ] `supervisor.py`: se o ffmpeg morrer, reiniciar com backoff exponencial e
       teto; logar o motivo. Nunca deixar processo órfão segurando a porta 9000.
-- [ ] Detectar mudança de resolução/refresh do monitor (jogo entrando em fullscreen
-      exclusivo) — o `ddagrab` costuma quebrar aí. Reiniciar a captura em vez de morrer.
+- [ ] **Reerguer a captura no `DXGI_ERROR_ACCESS_LOST`** — medido na Fase 2
+      (`docs/fase2.md` §8). ⚠️ **A premissa original deste item estava errada:**
+      ele dizia "detectar mudança de resolução/refresh", e no caso real o desktop
+      **não mudou** de modo (seguiu 1920x1080@60) — quem quebrou foi o jogo saindo
+      do compositor ao entrar em fullscreen exclusivo. Vigiar a resolução não
+      pegaria isso. O gatilho certo é o próprio erro do ffmpeg
+      (`AcquireNextFrame failed: 887a0026`, seguido de `Conversion failed!`), e a
+      recuperação é reiniciar o processo: o filtro `ddagrab` não tem opção de
+      reinicializar sozinho.
 - [ ] Logs rotativos em arquivo + `--verbose` no console.
 - [ ] `lanstream send --watch`: fica no ar esperando o OBS conectar/reconectar,
       sem precisar reiniciar nada do lado do Windows.
@@ -443,7 +465,7 @@ intervenção nas duas máquinas.
 
 | Risco | Impacto | Mitigação |
 |---|---|---|
-| `ddagrab` não captura o jogo (fullscreen exclusivo / anti-cheat) | 🟡 Médio | **Fase 0: captura do desktop validada** (58 fps, speed 0.98x, tudo na GPU). Restou só o caso do fullscreen exclusivo. Testar com os jogos reais. Fallback: forçar borderless windowed, ou usar OBS no Windows como capturador enviando SRT. |
+| `ddagrab` não captura o jogo (fullscreen exclusivo / anti-cheat) | 🟢 **Materializou-se em parte, e o fallback resolveu** | **Fase 2 (30/08): jogo 3D moderno capturado em borderless** — RE2 remake, 3 min, 57.1 fps, 14.5–15.2 Mbps, `drop=0`, imagem no OBS do Mac. **Fullscreen exclusivo derruba a captura** com `DXGI_ERROR_ACCESS_LOST` (`docs/fase2.md` §8): o fallback previsto aqui — borderless windowed — virou o modo suportado do projeto. Anti-cheat segue não testado (o RE2 single-player não carrega nenhum). |
 | Áudio loopback no Windows exige software de terceiro | 🔴 Confirmado | **Fase 0:** não existe nenhum device de loopback na máquina (`Win32_SoundDevice` só lista Realtek + NVIDIA HDMI). A Fase 3 começa do zero e exige instalar driver + reboot. |
 | **Caminho assimétrico: downlink roteador→Mac** | 🔴 Alto | **É o gargalo real (`baseline` §4c).** Mac→Windows faz 93.5 Mbps TCP e 60 Mbps UDP com 0% perda; Windows→Mac faz 68 Mbps TCP e perde 5.5% a 25 Mbps. A única perna não compartilhada é o downlink do AP. Correção provável: **Mac no cabo** (adaptador USB-C) — não o cabo do Windows, que já provou carregar 93.5 Mbps. |
 | **A rede não sustentar o bitrate** | 🟡 Médio | **Rebaixado.** O teto de 16 Mbps do `baseline` §4 era artefato da rajada não pacejada do `iperf3 -u`: no mesmo caminho o TCP faz 68 Mbps. A SRT se pacea e tem ARQ. Alvo segue em 15 Mbps até o experimento de buffer de 1.2 s dizer se dá pra subir. |
