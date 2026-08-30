@@ -191,3 +191,41 @@ Os testes do §4 e do §5 foram repetidos depois das correções: Ctrl+C em 0.11
 sem órfão, com o `Exiting normally, received signal 2` ainda capturado (o que
 prova que a drenagem continua fazendo o que precisa), e o comando montado
 inalterado.
+
+## 7. A rodada no Windows cobrou uma mensagem de erro
+
+O F2.1 **falhou na primeira execução**, e a falha estava certa: o
+`lanstream.toml` do Windows ainda tinha `host = "192.168.0.21"` — o IP do Mac,
+que era a instrução da Fase 0/1. A separação `host`/`peer` do commit `010d763`
+tornou isso inválido, e a checagem que o próprio `010d763` criou pegou.
+
+O defeito não foi a FALHA, foi **a explicação dela**:
+
+```
+[FALHA] host do sender: 192.168.0.21 não é um IP desta máquina (192.168.0.12)
+        O IP mudou. Atualize [network] host aqui e no Mac — senão o OBS vai
+        conectar num endereço que não existe mais.
+```
+
+O IP não tinha mudado. Duas causas produzem a mesma evidência — o DHCP trocar o
+endereço, e o toml estar na semântica antiga — e a mensagem afirmava a primeira,
+mandando quem lê investigar a rede quando o problema era o arquivo. Uma mensagem
+que aponta a causa errada com confiança é pior que uma genérica.
+
+Agora o caso sem ambiguidade é diagnosticado pelo nome:
+
+```
+[FALHA] host do sender: 192.168.0.21 é o mesmo que [network] peer
+        Os dois campos não podem ter o mesmo valor: `host` é sempre o IP do
+        WINDOWS (é para lá que o OBS conecta) e `peer` é a outra ponta, o Mac.
+          host = "192.168.0.12"   # esta máquina
+          peer = "192.168.0.21"   # o Mac
+```
+
+E quando `host` não é nem local nem igual ao `peer`, as duas hipóteses aparecem
+lado a lado, sem escolher por quem lê.
+
+> **A instrução do protocolo também estava errada** — ela dizia que o
+> `lanstream.toml` "não precisa mudar", pensando só no `preset`. O passo "antes:
+> atualizar" do §F2 foi corrigido no mesmo commit em que o Windows registrou o
+> achado.

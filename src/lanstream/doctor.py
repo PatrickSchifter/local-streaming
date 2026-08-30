@@ -351,7 +351,7 @@ def check_firewall(report: Report, cfg: Config) -> None:
         )
 
 
-def _check_host_identity(report: Report, host: str, ips: list[str]) -> bool:
+def _check_host_identity(report: Report, host: str, ips: list[str], peer: str = "") -> bool:
     """O `host` é sempre o IP do sender. Cada lado erra de um jeito diferente.
 
     No Windows ele deve ser um IP desta máquina — se não for, o IP mudou e a URL
@@ -363,15 +363,35 @@ def _check_host_identity(report: Report, host: str, ips: list[str]) -> bool:
         if host in ips:
             report.add(Level.OK, "host do sender", f"{host} — é esta máquina, como deve ser")
             return True
-        else:
+        # Duas causas dão a mesma evidência, e apontar só uma manda quem lê caçar
+        # a coisa errada: foi o que aconteceu no F2.1 de 30/08, com a mensagem
+        # dizendo "o IP mudou" para um toml que só estava na semântica antiga.
+        # Quando `host` == `peer` não há dúvida: o campo ficou com o valor da
+        # outra ponta.
+        if host and host == peer:
             report.add(
                 Level.FAIL,
                 "host do sender",
-                f"{host} não é um IP desta máquina ({', '.join(ips) or 'nenhum'})",
-                "O IP mudou. Atualize [network] host aqui e no Mac — senão o OBS vai\n"
-                "conectar num endereço que não existe mais.",
+                f"{host} é o mesmo que [network] peer",
+                "Os dois campos não podem ter o mesmo valor: `host` é sempre o IP do\n"
+                "WINDOWS (é para lá que o OBS conecta) e `peer` é a outra ponta, o Mac.\n"
+                f'  host = "{ips[0] if ips else "<ip-deste-pc>"}"   # esta máquina\n'
+                f'  peer = "{peer}"   # o Mac',
             )
             return False
+        report.add(
+            Level.FAIL,
+            "host do sender",
+            f"{host} não é um IP desta máquina ({', '.join(ips) or 'nenhum'})",
+            "Duas causas possíveis:\n"
+            "  1. o DHCP trocou o IP — atualize [network] host aqui e no Mac, senão\n"
+            "     o OBS conecta num endereço que não existe mais;\n"
+            "  2. o toml é anterior ao commit 010d763, quando `host` queria dizer\n"
+            "     'a outra ponta'. Agora `host` é sempre o Windows e a outra ponta\n"
+            "     é o [network] peer.\n"
+            f"Se {host} for o IP do Mac, é o caso 2.",
+        )
+        return False
     elif host in ips:
         report.add(
             Level.FAIL,
@@ -418,7 +438,7 @@ def check_network(report: Report, cfg: Config) -> None:
             "Preencha [network] host no lanstream.toml com o IP do Windows —\n"
             "é o endereço em que o OBS conecta, e vale nas duas máquinas.",
         )
-    elif not _check_host_identity(report, host, ips) and not ff.IS_WINDOWS:
+    elif not _check_host_identity(report, host, ips, cfg.network.peer) and not ff.IS_WINDOWS:
         # Host errado no Mac: medir alcance contra ele seria um ping em si mesmo,
         # que passa de graça e contradiz visualmente a falha logo acima.
         return

@@ -166,6 +166,22 @@ O que anotar:
 > ele sai com `Error submitting a packet to the muxer: I/O error`. **Isso não é
 > bug da Fase 2** — o `--watch` que resolve isso é da Fase 5. Reinicie e siga.
 
+> ⚠️ **O `drop=1` das rodadas curtas de 30/08 não é novidade** — está explicado no
+> veredito no fim desta seção. Com receptor e tela em movimento, a referência da
+> Fase 0 é `drop=0` em 10 minutos.
+
+**O lado do Mac já está pronto** (30/08): `lanstream.toml` com
+`host = "192.168.0.12"`, doctor todo verde, e o Windows respondendo por ARP. A
+URL que eu vou colar no Media Source do OBS é
+
+```
+srt://192.168.0.12:9000?mode=caller&latency=1200000
+```
+
+com `Input Format = mpegts` e "Local File" desmarcado — a receita da Fase 0
+(`baseline` §5). Se o IP do Windows tiver mudado desde então, o F2.1 acusa antes
+deste passo.
+
 ### F2.4 — Ctrl+C: o que só o Windows responde 🔴
 
 Este é o passo que existe por causa de uma lacuna conhecida, não por

@@ -174,10 +174,12 @@ local-streaming/
 > separados, e a correção rendeu uma checagem nova — o doctor agora percebe que o
 > IP do sender mudou (`docs/fase1.md` §1).
 >
-> 🟡 **Fase 2 em verificação** (2026-08-29). O `lanstream send` monta o mesmo
-> comando que a Fase 0 validou na mão e encerra sem deixar ffmpeg órfão. O que
-> não dá para testar no Mac — `ddagrab`, NVENC e o Ctrl+C do console do Windows —
-> está listado como pendente em [`docs/fase2.md`](docs/fase2.md) §5.
+> 🟡 **Fase 2 — 4 dos 5 passos passaram** (2026-08-30). O `lanstream send` monta
+> no Windows exatamente o comando que a Fase 0 validou na mão, e o `CTRL_C_EVENT`
+> do console encerra o ffmpeg em 0.27–0.67 s sem órfão na porta 9000 — a decisão
+> de herdar o grupo do console está medida nas duas plataformas agora.
+> **Falta só o F2.3**, a rodada com o OBS do Mac do outro lado, que é o critério
+> de saída. Passo a passo em [`docs/proximos-testes.md`](docs/proximos-testes.md) §F2.
 
 ## 4. Fases
 
@@ -300,17 +302,27 @@ lento) ou rodar OBS no Windows só como capturador. Descobrir isso na Fase 0, n�
       fora do Windows de propósito: é como se confere o comando de lá sentado
       aqui, e nesse caso o ffmpeg local não é consultado (a resposta dele seria
       pior que nenhuma).
-- [ ] **Rodar o `send` no Windows**, com o OBS do Mac como Media Source. É o
-      critério de saída, e é o que falta. Protocolo em cinco passos (quatro deles
-      não precisam do Mac) em [`docs/proximos-testes.md`](docs/proximos-testes.md) §F2.
+- [x] **Rodar o `send` no Windows** — quatro dos cinco passos, os que não
+      dependem do Mac (30/08): o `doctor` dá 11 OK, o comando montado é o da
+      Fase 0, o `CTRL_C_EVENT` encerra limpo em 0.27–0.67 s e dois `send`
+      seguidos sobem sem `Address already in use`.
+- [x] **O doctor passou a distinguir as duas causas de `host` inválido.** A
+      rodada de 30/08 falhou primeiro por config velha (`host` = IP do Mac, a
+      semântica anterior ao 010d763) e a mensagem dizia "o IP mudou" — mandava
+      caçar a coisa errada. Agora `host == peer` é diagnosticado pelo nome e o
+      caso ambíguo lista as duas hipóteses (`docs/fase2.md` §7).
+- [ ] **F2.3 — a rodada com o OBS do Mac.** É o critério de saída, e é o que
+      falta. As rodadas de 30/08 foram curtas, com a tela parada e sem receptor:
+      não medem fps nem bitrate. Protocolo em
+      [`docs/proximos-testes.md`](docs/proximos-testes.md) §F2.
 
 **Saída:** `lanstream send` no Windows + Media Source no Mac = jogo na tela do OBS.
 
-> **Onde está:** 🟡 **Código pronto e verificado no que não depende do Windows**
-> (cadeia de fallback, presets por família, dry-run, Ctrl+C sem órfão, invariante
-> do `example.toml`) — `docs/fase2.md` §5 tem a tabela. Falta a rodada real: o
-> `ddagrab` e o NVENC não existem no Mac, e o `CTRL_C_EVENT` do Windows percorre
-> um caminho diferente do SIGINT testado aqui.
+> **Onde está:** 🟡 **Rodou no Windows em 30/08 e passou em 4 dos 5 passos.** O
+> `CTRL_C_EVENT` — a lacuna que o protocolo existia para fechar — chega no ffmpeg
+> e ele sai escrevendo o trailer, sem `terminate` e sem segurar a porta.
+> Falta o **F2.3**: o `ddagrab` entregando frame **com o receptor conectado**, e
+> os fps com jogo real. Só isso separa a fase do fim.
 
 ---
 
