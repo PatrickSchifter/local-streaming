@@ -151,3 +151,28 @@ Verificado no Mac (o que não depende de GPU NVIDIA nem de `ddagrab`):
       movimento e deixou o caso do fullscreen exclusivo em aberto), e o Ctrl+C
       no console do Windows — o teste acima foi um SIGINT em POSIX, e o
       `CTRL_C_EVENT` do Windows percorre outro caminho.
+
+## 6. Revisão de código: cinco defeitos, dois deles em promessas escritas
+
+Um `/code-review` sobre o diff da fase achou cinco problemas reais. Vale
+registrar porque dois deles eram **docstrings afirmando o oposto do que o código
+fazia** — o tipo de defeito que sobrevive a leitura casual justamente porque o
+comentário ao lado diz que está tudo bem.
+
+| # | Defeito | Correção |
+|---|---|---|
+| 1 | `pick()` inferia "não verifiquei" de `available` vazio. Um `-encoders` devolvendo lista vazia (build esquisito, ou o formato mudando de novo) faria o doctor imprimir `encoder escolhido: hevc_nvenc` **verde** no lugar de uma FALHA. | `verified` virou parâmetro explícito. Bug de parser não vira mais diagnóstico otimista. |
+| 2 | `proc.stderr.close()` corria com a thread que ainda estava dentro de um `os.read()`. Com o fd reciclado, ela leria de um arquivo qualquer e cuspiria o conteúdo no console. | O `run()` passou a ser dono da thread: `join` antes de fechar, e se o join não bastar o pipe fica aberto de propósito. |
+| 3 | Duas threads escrevendo no console e no `pending` sem sincronia — no encerramento, que é o caminho que o usuário sempre vê. | Um lock no `_echo_ffmpeg`. |
+| 4 | O `shell_line` promete ser colável no PowerShell, mas com o ffmpeg em `C:\Program Files\...` o argv[0] sai entre aspas, e o PowerShell lê uma linha começada por `"` como expressão. | `&` na frente quando o argv[0] está entre aspas. |
+| 5 | `profile_of` mandava todo nome desconhecido para o perfil de **software**, cuja docstring dizia que ele "no máximo perde desempenho". Falso: ele carrega `-preset veryfast -tune zerolatency`, que são opções privadas do x264. Um `--encoder h264_mf` (existe nos builds do gyan.dev) abortaria com "Error setting option preset". | Perfil neutro — sem preset, sem tune, sem hwdownload. Só o prefixo `lib` cai no de software. |
+
+O 1 e o 5 são a mesma classe de erro: **um default escolhido por parecer
+conservador, sem conferir o que ele de fato faz.** "Lista vazia = não consultei"
+e "não reconheço = trate como software" são as duas suposições, e as duas
+falhavam para o mesmo lado — o de dizer que está tudo bem.
+
+Os testes do §4 e do §5 foram repetidos depois das correções: Ctrl+C em 0.11 s,
+sem órfão, com o `Exiting normally, received signal 2` ainda capturado (o que
+prova que a drenagem continua fazendo o que precisa), e o comando montado
+inalterado.

@@ -50,8 +50,16 @@ class Plan:
 
     @property
     def shell_line(self) -> str:
-        """A mesma coisa, colável num terminal."""
-        return " ".join(_quote(a) for a in self.argv)
+        """A mesma coisa, colável num PowerShell.
+
+        O `&` na frente não é enfeite: no Windows o argv[0] é o caminho absoluto
+        do ffmpeg, e um dos locais conhecidos é `C:\\Program Files\\ffmpeg\\bin`.
+        Com espaço no caminho o argv[0] sai entre aspas, e o PowerShell lê uma
+        linha começada por `"` como expressão: imprimiria o caminho e erraria no
+        `-hide_banner` seguinte. O `&` é o operador de chamada.
+        """
+        head, *rest = (_quote(a) for a in self.argv)
+        return " ".join([("& " if head.startswith('"') else "") + head, *rest])
 
 
 def _quote(arg: str) -> str:
@@ -83,7 +91,12 @@ def build(cfg: Config, info: ff.FFmpegInfo | None = None, *, encoder: str = "") 
     """
     available = info.encoders if info is not None else set()
     try:
-        chosen = enc.pick(available, cfg.video.codec, encoder or cfg.video.encoder)
+        chosen = enc.pick(
+            available,
+            cfg.video.codec,
+            encoder or cfg.video.encoder,
+            verified=info is not None,
+        )
         preset = enc.preset_args(chosen, cfg.video.preset)
     except enc.EncoderError as exc:
         raise SenderError(str(exc)) from None
@@ -176,6 +189,21 @@ def stream_output(pipe, echo) -> None:
         echo(buffer.decode("utf-8", errors="replace").rstrip(), False)
 
 
+def _start_drain(proc: subprocess.Popen, echo) -> threading.Thread | None:
+    """Continua lendo o stderr enquanto o ffmpeg encerra.
+
+    Não é zelo com o log: pipe cheio bloqueia quem escreve, e o ffmpeg ainda tem
+    o que dizer depois do sinal ("Exiting normally, received signal 2", o resumo
+    do mux). Parar de ler aqui poderia travá-lo exatamente no ponto em que
+    queremos que ele termine.
+    """
+    if proc.stderr is None:
+        return None
+    thread = threading.Thread(target=stream_output, args=(proc.stderr, echo), daemon=True)
+    thread.start()
+    return thread
+
+
 def run(plan: Plan, echo) -> int:
     """Roda o ffmpeg até o Ctrl+C ou até ele morrer. Devolve o código de saída.
 
@@ -196,32 +224,33 @@ def run(plan: Plan, echo) -> int:
         raise SenderError(f"não consegui executar {plan.argv[0]}: {exc}") from None
 
     interrupted = False
+    drain: threading.Thread | None = None
     try:
         stream_output(proc.stderr, echo)
         return proc.wait()
     except KeyboardInterrupt:
         interrupted = True
+        drain = _start_drain(proc, echo)
         return _shutdown(proc, echo)
     finally:
         if not interrupted and proc.poll() is None:
-            # Chegamos aqui sem Ctrl+C e com o ffmpeg vivo: só acontece se a
-            # leitura do stderr morrer antes dele. Órfão segurando a 9000 é
-            # justamente o que a Fase 2 promete não deixar acontecer.
+            # Sem Ctrl+C e com o ffmpeg vivo: só acontece se a leitura do stderr
+            # morrer antes dele. Órfão segurando a 9000 é justamente o que a
+            # Fase 2 promete não deixar acontecer.
+            drain = _start_drain(proc, echo)
             _shutdown(proc, echo)
-        if proc.stderr:
+        if drain is not None:
+            drain.join(timeout=GRACE_SECONDS)
+        # Fechar o pipe com a thread ainda dentro de um `os.read()` a deixaria
+        # lendo de um fd reciclado — o próximo arquivo aberto por este processo
+        # sairia no console. Se o join não bastou, o pipe fica aberto de
+        # propósito: o GC fecha, e a essa altura o ffmpeg já morreu.
+        if proc.stderr is not None and (drain is None or not drain.is_alive()):
             proc.stderr.close()
 
 
 def _shutdown(proc: subprocess.Popen, echo) -> int:
-    """Espera o ffmpeg sair sozinho; insiste com terminate/kill se ele não sair.
-
-    O stderr continua sendo drenado numa thread daemon. Não é zelo com o log: um
-    pipe cheio bloqueia quem escreve, e o ffmpeg ainda tem o que dizer depois do
-    sinal ("Exiting normally, received signal 2", o resumo do mux). Parar de ler
-    aqui poderia travá-lo exatamente no ponto em que queremos que ele termine.
-    """
-    if proc.stderr is not None:
-        threading.Thread(target=stream_output, args=(proc.stderr, echo), daemon=True).start()
+    """Espera o ffmpeg sair sozinho; insiste com terminate/kill se ele não sair."""
     echo("encerrando o ffmpeg (fechando o mux e a porta SRT)...", False)
     deadline = time.monotonic() + GRACE_SECONDS
     while time.monotonic() < deadline:

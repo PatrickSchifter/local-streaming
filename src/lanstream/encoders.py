@@ -100,6 +100,10 @@ VIDEOTOOLBOX = Profile(
     presets=(),
     extra=("-realtime", "1"),
 )
+# Para um encoder que não reconhecemos. Vazio de propósito: sem preset, sem tune,
+# sem hwdownload. Um perfil errado é pior que nenhum — ver profile_of().
+NEUTRAL = Profile(name="desconhecido", preset_flag="", default_preset="", presets=())
+
 SOFTWARE = Profile(
     name="software",
     preset_flag="-preset",
@@ -127,11 +131,15 @@ def codec_of(encoder: str) -> str | None:
 
 
 def profile_of(encoder: str) -> Profile:
-    """Família do encoder. Nome desconhecido cai no perfil de software.
+    """Família do encoder. Nome desconhecido cai no perfil neutro.
 
-    Cair no software é a escolha conservadora: ele é o único que não assume
-    aceleração nenhuma, então um encoder novo (`av1_nvenc`, digamos) no máximo
-    perde desempenho — não monta um comando que o ffmpeg recusa.
+    O default NÃO é o de software, ainda que ele pareça o mais conservador: o
+    perfil de software carrega `-preset veryfast -tune zerolatency` e o
+    `hwdownload`, e essas são opções privadas do x264/x265. Aplicá-las a um
+    encoder desconhecido — `h264_mf`, que existe nos builds do gyan.dev e é uma
+    coisa plausível de se tentar numa máquina sem NVIDIA — faz o ffmpeg abortar
+    logo na partida com "Error setting option preset". Passar nada é a única
+    escolha que não inventa uma flag que o encoder pode não ter.
     """
     if encoder.endswith("_nvenc"):
         return NVENC
@@ -141,22 +149,35 @@ def profile_of(encoder: str) -> Profile:
         return QSV
     if encoder.endswith("_videotoolbox"):
         return VIDEOTOOLBOX
-    return SOFTWARE
+    # No ffmpeg o prefixo `lib` é encoder de software, e é o que precisa dos
+    # frames na RAM. É o único caso em que assumir a cadeia de hwdownload acerta.
+    if encoder.startswith("lib"):
+        return SOFTWARE
+    return NEUTRAL
 
 
 def hardware_encoders(available: set[str]) -> list[str]:
     return sorted(e for e in available if _HW_ENCODER_RE.search(e))
 
 
-def pick(available: set[str], codec: str = "hevc", override: str = "") -> str:
+def pick(
+    available: set[str], codec: str = "hevc", override: str = "", *, verified: bool = True
+) -> str:
     """Escolhe o encoder pela cadeia de fallback, preferindo o codec pedido.
 
-    `available` vazio significa "não sei o que existe" — só acontece em
-    `--dry-run` numa máquina que não é a que vai rodar. Aí o override manda e a
-    cadeia devolve o primeiro da preferência, sem fingir que verificou.
+    `verified=False` significa "ninguém consultou um ffmpeg" — o `--dry-run` fora
+    do Windows. Aí o override manda e a cadeia devolve o primeiro da preferência,
+    sem fingir que verificou.
+
+    Isso é um parâmetro explícito, e não `available` vazio, de propósito: com a
+    inferência, um `-encoders` que devolvesse lista vazia (build esquisito, ou o
+    formato da listagem mudando de novo — foi o que o commit aacb863 consertou)
+    faria o doctor imprimir um `encoder escolhido: hevc_nvenc` verde no lugar de
+    uma FALHA. Um bug de parser viraria um diagnóstico otimista, que é o oposto
+    do que o doctor existe para fazer.
     """
     if override:
-        if available and override not in available:
+        if verified and override not in available:
             raise EncoderError(
                 f"encoder {override!r} não existe neste ffmpeg.\n"
                 f"  Disponíveis por hardware: "
@@ -165,7 +186,7 @@ def pick(available: set[str], codec: str = "hevc", override: str = "") -> str:
         return override
     preferred = [e for e in ENCODER_CHAIN if e in CODEC_FAMILIES.get(codec, ())]
     ordered = preferred + [e for e in ENCODER_CHAIN if e not in preferred]
-    if not available:
+    if not verified:
         return ordered[0]
     for candidate in ordered:
         if candidate in available:

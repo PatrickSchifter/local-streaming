@@ -8,6 +8,7 @@ mensagem de uma linha e código 2 — nunca como traceback (PLANO §Fase 1).
 from __future__ import annotations
 
 import sys
+import threading
 from dataclasses import asdict
 from pathlib import Path
 from typing import Annotated
@@ -123,13 +124,22 @@ def send(
     raise typer.Exit(0 if code in (0, 255) else 1)
 
 
+# No encerramento há duas fontes escrevendo no console ao mesmo tempo: a thread
+# que drena o stderr do ffmpeg e o próprio `_shutdown`, que anuncia o que está
+# fazendo. Sem o lock as duas linhas se intercalam no meio e o `pending` fica
+# desatualizado, colando a próxima linha na de progresso — e isso aconteceria em
+# todo Ctrl+C, que é o caminho que o usuário sempre vê.
+_ECHO_LOCK = threading.Lock()
+
+
 def _echo_ffmpeg(line: str, is_progress: bool) -> None:
     """Progresso se reescreve na mesma linha; o resto rola normalmente."""
-    if is_progress:
-        typer.echo(f"\r{line}", nl=False)
-    else:
-        typer.echo(("\n" if _echo_ffmpeg.pending else "") + line)
-    _echo_ffmpeg.pending = is_progress
+    with _ECHO_LOCK:
+        if is_progress:
+            typer.echo(f"\r{line}", nl=False)
+        else:
+            typer.echo(("\n" if _echo_ffmpeg.pending else "") + line)
+        _echo_ffmpeg.pending = is_progress
 
 
 _echo_ffmpeg.pending = False
