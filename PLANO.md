@@ -441,10 +441,20 @@ loopback nativa no Windows, então precisa de um device intermediário.
       - "Use hardware decoding when available" = **on** (VideoToolbox no Apple Silicon).
       - Network buffering em 0 (o buffer já é do SRT).
       - Escala/ancoragem da fonte na cena.
-- [ ] Mic no Mac: medir o offset em relação ao vídeo e aplicar **Sync Offset**
-      nas propriedades avançadas de áudio do OBS. Documentar o valor medido.
-- [ ] Definir a config de saída pra Twitch (encoder Apple VT H.264, 6000–8000 kbps,
-      keyframe 2s) e deixar num perfil do OBS.
+- [x] Mic no Mac: **+1613 ms** no Sync Offset do `Mic/Aux`, medido e aplicado
+      (`docs/obs-setup.md` §4). O mic chega 1,62 s antes do vídeo — 15 claquetes,
+      83% de cobertura, faixa de ±24 ms —, e esse número é a **latência ponta a
+      ponta do caminho do vídeo**, que o projeto não tinha medido até aqui.
+      Duas armadilhas no caminho: a monitoração do OBS realimenta o microfone
+      (a primeira medição deu o sinal invertido) e o bipe acústico precisa ser
+      procurado na banda de 1 kHz, senão a cobertura cai para 6%.
+- [x] Config de saída para a Twitch no perfil `Untitled` (o único que existe):
+      serviço Twitch com a chave, `StreamEncoder = apple_h264` (era `x264`),
+      `VBitrate = 6000`, `ABitrate = 160`, AAC. Nada foi transmitido.
+      - O **keyframe de 2 s** não é ajustável no modo Simple; ele vem das
+        recomendações do serviço, que estão ligadas (`IgnoreRecommended=false`).
+        Fica para conferir na primeira transmissão de teste — se não vier, é
+        trocar para o modo Advanced, e aí o item volta a abrir.
 
 **Saída:** cena do OBS completa (jogo + mic + overlays), stream de teste privado
 na Twitch rodando 15 minutos sem dropped frames.

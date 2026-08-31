@@ -131,6 +131,43 @@ def duration(path: Path) -> float:
         return 0.0
 
 
+def bipes_por_tom(path: Path, flashes: list[float]) -> list[float]:
+    """Acha os bipes filtrando a banda de 1 kHz antes de decidir o que é silêncio.
+
+    Existe para o caminho ACÚSTICO (`docs/obs-setup.md` §4), em que o bipe da
+    claquete chega pelo ar até o microfone: ele sai a −23 dB de pico sobre um
+    ruído de quarto em −50, e o `silencedetect` cru ora vê 10 bipes ora vê 56,
+    conforme o limiar. O tom é puro e o ruído é de banda larga, então filtrar
+    antes separa os dois — medido em 31/08: 19 bipes contra 18 flashes, com
+    cadência de 4,99 s.
+
+    O limiar não é fixo porque o nível depende do volume e da distância; são
+    tentados vários e vence o que produzir a contagem mais perto do número de
+    flashes, que é quantos bipes devem existir. Isso é possível aqui e não no
+    caminho normal justamente porque o vídeo diz a resposta.
+    """
+    melhor: list[float] = []
+    for limiar in (-45, -50, -55, -60, -65):
+        saida = _run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-i",
+                str(path),
+                "-af",
+                f"bandpass=f=1000:width_type=h:w=100,silencedetect=noise={limiar}dB:d=0.2",
+                "-f",
+                "null",
+                "-",
+            ]
+        )
+        achados = [float(m) for m in _SILENCE_END.findall(saida)]
+        if not melhor or abs(len(achados) - len(flashes)) < abs(len(melhor) - len(flashes)):
+            melhor, escolhido = achados, limiar
+    print(f"  banda de 1 kHz: {len(melhor)} bipes com noise={escolhido}dB")
+    return melhor
+
+
 def detect(path: Path, pic_th: float = PIC_TH_SENSIVEL) -> tuple[list[float], list[float]]:
     """Instantes de cada flash e de cada bipe, em segundos do arquivo.
 
@@ -568,6 +605,8 @@ def measure(args) -> int:
         print(f"não encontrei {path}")
         return 1
     flashes, beeps = detect_com_fallback(path, args.pic_th)
+    if args.tom:
+        beeps = bipes_por_tom(path, flashes)
     print(f"\n{len(flashes)} flashes, {len(beeps)} bipes")
     return report(path, pair_up(flashes, beeps), args.offset_atual, flashes, beeps)
 
@@ -597,6 +636,11 @@ def main() -> int:
     m = sub.add_parser("medir", help="mede offset e deriva numa gravação do OBS")
     m.add_argument("arquivo")
     m.add_argument("--offset-atual", type=int, default=0, dest="offset_atual")
+    m.add_argument(
+        "--tom",
+        action="store_true",
+        help="acha os bipes pela banda de 1 kHz — para o áudio captado pelo MICROFONE",
+    )
     m.add_argument(
         "--pic-th",
         type=float,

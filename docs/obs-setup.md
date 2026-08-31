@@ -136,6 +136,39 @@ que a claquete produz **som e imagem no mesmo instante, na mesma máquina**:
 > gravar com **duas faixas de áudio** no OBS — a fonte SRT na 1 e o mic na 2 — e
 > medir cada faixa contra o mesmo vídeo. Dá o mesmo número sem depender do ar.
 
+### Medido em 31/08
+
+```
+15 claquetes, cobertura 15/18 (83%)
+  mediana -1623,5 ms      faixa -1647 .. -1600  (±24 ms)
+  => Sync Offset do Mic/Aux = +1613 ms   (descontado o viés de +10,7)
+```
+
+O mic chega **1,62 s antes** do vídeo. Esse número é a **latência ponta a ponta
+do caminho do vídeo**, medida pela primeira vez no projeto: captura, encoder,
+SRT com 1200 ms de buffer, rede, decodificação e o buffer de rede da fonte.
+Aplicado no `Mic/Aux`.
+
+### Duas armadilhas que esta medição revelou
+
+**1. A monitoração realimenta o microfone.** A primeira tentativa deu `+246 ms`
+— o bipe *depois* do flash, impossível para som que viaja pelo ar. O mic não
+estava ouvindo a TV do Windows: estava ouvindo a **caixa do próprio Mac**
+tocando o áudio monitorado do jogo, que já vem atrasado pelo mesmo caminho do
+vídeo. Silenciar a fonte não basta; é preciso desligar a **monitoração** durante
+a medição.
+
+> E ela deve ficar desligada em produção também: com o mic atrasado 1,6 s, o som
+> do jogo saindo pela caixa do Mac é captado pelo mic e volta para o stream. Para
+> ouvir o jogo no Mac, fone.
+
+**2. O bipe acústico é fraco demais para o detector padrão.** Chegando pelo ar
+ele sai a −23 dB de pico sobre um ruído de quarto em −50, e o `silencedetect`
+cru achou 10 bipes num limiar e 56 no seguinte. Como o tom é puro (1 kHz) e o
+ruído é de banda larga, filtrar a banda antes de decidir separa os dois: 19 bipes
+para 18 flashes, cadência de 4,99 s. É o que faz o `av-sync.py medir --tom`, e
+sem ele a cobertura fica em **6%** — um par em dezoito.
+
 ### O resto desta página
 
 - [ ] Escala e ancoragem da fonte na cena (a cena de teste usa tela cheia).
