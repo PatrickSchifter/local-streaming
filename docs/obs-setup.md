@@ -169,6 +169,59 @@ ruído é de banda larga, filtrar a banda antes de decidir separa os dois: 19 bi
 para 18 flashes, cadência de 4,99 s. É o que faz o `av-sync.py medir --tom`, e
 sem ele a cobertura fica em **6%** — um par em dezoito.
 
+## 5. A transmissão de teste de 31/08 — o critério de saída da Fase 4
+
+```
+duração:    00:37:18       (o critério pedia 15 min)
+enviado:    1728 MB
+quadros:    134321         perdidos: 0        reconexões: nenhuma
+bitrate:    6,15–6,20 Mbps (CBR de 6000 + 160 de áudio)
+CPU do OBS: 70–86%         congestionamento: 0,00 o tempo todo
+Twitch:     EXCELENTE
+```
+
+O `INSTÁVEL` que a Twitch mostrou nos primeiros minutos era avaliação da partida —
+o gráfico de taxa de bits oscila enquanto o CBR assenta — e virou `EXCELENTE`
+sozinho. Vale saber para não sair caçando problema nos primeiros dois minutos de
+uma transmissão.
+
+### O encoder que subiu não era o configurado
+
+O perfil tinha `StreamEncoder = apple_h264` escrito, mas o log mostra:
+
+```
+[x264 encoder: 'simple_video_stream'] preset: veryfast
+  rate_control: CBR   bitrate: 6000   keyint: 120   custom: scenecut = 0
+```
+
+O `SetProfileParameter` do `obs-websocket` escreve no `basic.ini`, e o OBS **não
+relê o perfil em memória**: para valer é preciso abrir `Configurações > Saída` e
+aplicar, ou reiniciar. Quem mudar config por websocket precisa conferir no log o
+que de fato subiu — o arquivo dizer uma coisa não garante que o processo esteja
+fazendo essa coisa. É o mesmo tipo de armadilha do arquivo de cena (§1).
+
+**O item do keyframe, porém, fecha:** `keyint: 120` a 60 fps são exatamente 2 s, com
+`CBR` e `scenecut = 0` — as recomendações do serviço foram aplicadas sozinhas,
+como o `IgnoreRecommended=false` prometia.
+
+### Térmico: o Air não esquenta por causa disto
+
+Um `MacBook Air` é fanless, então a pergunta é legítima. Medido durante a
+transmissão, com o sensor virtual da bateria:
+
+```
+19:30  33,3°      19:38  31,4°      19:48  30,2°
+```
+
+Caiu **3,1 °C durante a live**, sem um único aviso de `CPU_Speed_Limit`. O calor
+que havia vinha de um `srt-live-transmit` órfão de testes anteriores queimando um
+núcleo inteiro; morto ele, a curva desce com a transmissão rodando.
+
+Duas coisas ficam disso: **1080p60 em x264 software cabe neste Air** com folga
+térmica, e **processo órfão de teste falseia medição de desempenho** — os 0
+quadros perdidos foram obtidos com um núcleo a menos disponível, então a margem
+real é maior que a medida.
+
 ### O resto desta página
 
 - [ ] Escala e ancoragem da fonte na cena (a cena de teste usa tela cheia).

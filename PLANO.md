@@ -459,6 +459,17 @@ loopback nativa no Windows, então precisa de um device intermediário.
 **Saída:** cena do OBS completa (jogo + mic + overlays), stream de teste privado
 na Twitch rodando 15 minutos sem dropped frames.
 
+> **Onde está:** ✅ **Critério batido em 31/08, com folga.** 37 min no ar, 134321
+> quadros, **0 perdidos**, nenhuma reconexão, 6,15–6,20 Mbps, e a Twitch marcando
+> `EXCELENTE` (`docs/obs-setup.md` §5). Faltam só overlays na cena, que são
+> escolha de produção e não têm critério técnico.
+>
+> Dois achados da rodada: o encoder que subiu foi o **x264**, não o `apple_h264`
+> escrito no perfil — o OBS não relê o `basic.ini` em memória, e quem muda config
+> por websocket precisa conferir no log o que de fato subiu. E o Air **esfriou
+> 3,1 °C durante a transmissão**: o calor vinha de um processo órfão dos meus
+> testes, não da live.
+
 ---
 
 ### Fase 5 — Robustez
