@@ -513,3 +513,52 @@ o mesmo teste de 60 s que já passou, mas de 8 a 10 minutos, medido no começo e
 fim. Sessenta segundos são curtos demais para um atraso que leva minutos para
 aparecer — do mesmo jeito que o `start_time` do §8 era curto demais por ser um
 instante só.
+
+
+---
+
+## 11. F3.4 medido: o atraso é constante, e o valor não é estável entre rodadas
+
+Gravação de 31/08 13:11, 654 s com a claquete em tela cheia o tempo inteiro —
+a primeira do dia em que o material dura a janela toda:
+
+```
+101 claquetes, cobertura 101/132 flashes (77%)
+  mediana:  +231,4 ms      faixa: +203,5 .. +256,0 ms
+  deriva:   -2,9 ms entre as metades (-29 ms/hora)
+  por terços: +231,4 / +223,4 / +235,4 ms
+```
+
+**Não há deriva.** Onze minutos, 101 medidas, e os três terços variam ±6 ms —
+bem abaixo do piso de 40 ms do método. O atraso é constante dentro da janela,
+logo é *offset*: `-itsoffset` corrige, e o `aresample=async=1` que o §10 deixava
+em aberto não é necessário. Isso fecha a pergunta que a rodada anterior abriu.
+
+### O que ainda não fecha
+
+O valor **mudou entre rodadas da mesma conexão**:
+
+| gravação | cursor da fonte | claquetes | cobertura | mediana |
+|---|---|---|---|---|
+| 12:42:04 | — | 4 | 100% | +120,5 ms |
+| 12:56:00 (só 35 s úteis) | 982 s | 6 | 75% | +112,2 ms |
+| **13:11:04** | 1886 s | **101** | 77% | **+231,4 ms** |
+
+Não houve reconexão entre a segunda e a terceira: o cursor foi de 982 s para
+1886 s continuamente. Dentro de cada janela o valor é estável; entre elas, dobrou.
+Não há explicação medida para isso, e as hipóteses (o buffer do OBS acomodando em
+degraus, o conteúdo da tela mudando o comportamento do encoder) não foram
+testadas — ficam como hipótese, não como causa.
+
+> **A gravação das 12:56 rendeu 35 s de 11 minutos**, porque a claquete saiu da
+> tela e o desktop entrou. Isso se vê nos quadros extraídos, não no relatório: a
+> medição não sabe dizer que a fonte parou de mostrar a claquete, só que os
+> flashes acabaram. Quem for repetir: a claquete precisa ficar na tela a janela
+> inteira, e vale conferir um quadro do meio do arquivo antes de confiar no número.
+
+### O que decide
+
+Escrever `offset_ms = -220` (os +231 medidos menos o viés de +10,7 do método) no
+`lanstream.toml` do Windows e **medir de novo**. Se a mediana cair perto do viés,
+a correção vale e o F3.4 fecha; se cair perto de −110, o valor não é constante
+entre rodadas e a fase precisa de uma explicação antes de um número.
