@@ -97,11 +97,48 @@ o mesmo caminho serve com outros pedidos: `GetInputSettings`,
 saber se a fonte está recebendo: cursor parado em `0` com estado `PLAYING`
 alternando para `ENDED` é o *flapping* de quem tenta e não acha ninguém.
 
-## 4. O que falta nesta página
+## 4. O mic do Mac: por que ele precisa de atraso, e como medir
+
+O microfone é **local**: o que ele capta chega ao mixer do OBS em milissegundos.
+O jogo não: a imagem atravessa captura, encoder, SRT com 1200 ms de buffer, rede,
+decodificação e o buffer de rede da fonte. Quem fala no mic aparece adiantado em
+relação ao que está acontecendo na tela — e o conserto é **atrasar o mic** pelo
+tempo do caminho do vídeo, no `Sync Offset`.
+
+O valor não se estima: mede-se. E dá para medir sem instrumento novo, aproveitando
+que a claquete produz **som e imagem no mesmo instante, na mesma máquina**:
+
+```
+       o Windows toca a claquete
+              │
+    ┌─────────┴──────────┐
+    │                    │
+  imagem               som
+    │                    │
+  SRT + OBS          pelo AR
+  (~1-2 s)          (~ms, o mic capta)
+    │                    │
+    └──────► gravação ◄──┘
+         a diferença é o Sync Offset
+```
+
+### O procedimento
+
+1. **Windows:** `lanstream send` com o `claquete.mp4` em tela cheia, e o som
+   saindo pela caixa/TV **audível no ambiente** — o mic do Mac precisa ouvir.
+2. **Mac:** silenciar o áudio da fonte SRT (`Mic/Aux` fica aberto). Sem isso as
+   duas fontes de bipe se misturam na mesma faixa e não há como separá-las.
+3. Gravar 2 minutos e medir com o `scripts/av-sync.py medir`.
+4. O que sair é quanto o **mic está adiantado**; esse número, positivo, vai no
+   `Sync Offset` do `Mic/Aux`.
+
+> Alternativa se o mic não ouvir o Windows (máquinas em cômodos diferentes):
+> gravar com **duas faixas de áudio** no OBS — a fonte SRT na 1 e o mic na 2 — e
+> medir cada faixa contra o mesmo vídeo. Dá o mesmo número sem depender do ar.
+
+### O resto desta página
 
 - [ ] Escala e ancoragem da fonte na cena (a cena de teste usa tela cheia).
-- [ ] Mic do Mac: medir o offset contra o vídeo e aplicar no Sync Offset.
 - [ ] Perfil de saída para a Twitch (Apple VT H.264, 6000–8000 kbps, keyframe 2s).
 
-Os três dependem de decisões que ainda não foram tomadas ou medidas, e nenhum
-deles bloqueia o que está acima.
+Nenhum dos dois bloqueia o que está acima.
