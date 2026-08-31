@@ -459,16 +459,25 @@ loopback nativa no Windows, então precisa de um device intermediário.
 **Saída:** cena do OBS completa (jogo + mic + overlays), stream de teste privado
 na Twitch rodando 15 minutos sem dropped frames.
 
-> **Onde está:** ✅ **Critério batido em 31/08, com folga.** 37 min no ar, 134321
-> quadros, **0 perdidos**, nenhuma reconexão, 6,15–6,20 Mbps, e a Twitch marcando
-> `EXCELENTE` (`docs/obs-setup.md` §5). Faltam só overlays na cena, que são
-> escolha de produção e não têm critério técnico.
+> **Onde está:** ✅ **FECHADA em 31/08, com folga.** 37 min no ar contra os 15 do
+> critério: 134321 quadros, **0 perdidos**, nenhuma reconexão, 6,15–6,20 Mbps e a
+> Twitch marcando `EXCELENTE` (`docs/obs-setup.md` §5).
 >
-> Dois achados da rodada: o encoder que subiu foi o **x264**, não o `apple_h264`
-> escrito no perfil — o OBS não relê o `basic.ini` em memória, e quem muda config
-> por websocket precisa conferir no log o que de fato subiu. E o Air **esfriou
-> 3,1 °C durante a transmissão**: o calor vinha de um processo órfão dos meus
-> testes, não da live.
+> Três achados da rodada, todos registrados:
+> 1. O encoder que subiu foi o **x264**, não o `apple_h264` escrito no perfil — o
+>    OBS não relê o `basic.ini` em memória. Quem muda config por websocket tem de
+>    conferir no log o que de fato subiu.
+> 2. O **keyframe de 2 s** se resolveu sozinho (`keyint: 120` a 60 fps), pelas
+>    recomendações do serviço.
+> 3. O Air **esfriou 3,1 °C durante a transmissão** (33,3 → 30,2 °C, sem um aviso
+>    de `CPU_Speed_Limit`). O calor vinha de um `srt-live-transmit` órfão dos meus
+>    testes queimando um núcleo havia 1h38 — e os 0 quadros perdidos foram obtidos
+>    **com esse núcleo a menos**, então a margem real é maior que a medida.
+>
+> **Dois itens saíram daqui por não terem critério técnico**, e nenhum bloqueia
+> nada: os *overlays* da cena são escolha de produção, e trocar o encoder para o
+> `apple_h264` virou tuning — mede-se na Fase 7, agora que se sabe que o x264
+> cabe no Air com folga térmica.
 
 ---
 

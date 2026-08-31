@@ -210,10 +210,13 @@ Um `MacBook Air` é fanless, então a pergunta é legítima. Medido durante a
 transmissão, com o sensor virtual da bateria:
 
 ```
-19:30  33,3°      19:38  31,4°      19:48  30,2°
+com a live no ar:            19:30  33,3°   19:38  31,4°   19:48  30,2°
+depois de encerrada:         19:52  30,0°   19:56  29,3°
 ```
 
-Caiu **3,1 °C durante a live**, sem um único aviso de `CPU_Speed_Limit`. O calor
+Caiu **3,1 °C durante a live** e mais 0,9 °C depois dela, sem um único aviso de
+`CPU_Speed_Limit`. A maior parte da queda aconteceu **com a transmissão rodando**,
+que é o que responde a pergunta. O calor
 que havia vinha de um `srt-live-transmit` órfão de testes anteriores queimando um
 núcleo inteiro; morto ele, a curva desce com a transmissão rodando.
 
@@ -222,9 +225,11 @@ térmica, e **processo órfão de teste falseia medição de desempenho** — os
 quadros perdidos foram obtidos com um núcleo a menos disponível, então a margem
 real é maior que a medida.
 
-### O resto desta página
+### O que ficou fora, e por quê
 
-- [ ] Escala e ancoragem da fonte na cena (a cena de teste usa tela cheia).
-- [ ] Perfil de saída para a Twitch (Apple VT H.264, 6000–8000 kbps, keyframe 2s).
-
-Nenhum dos dois bloqueia o que está acima.
+* **Overlays e ancoragem da fonte na cena** — a cena de teste usa a fonte em tela
+  cheia, e o resto é escolha de produção, sem critério técnico para medir.
+* **Trocar o encoder para `apple_h264`** — está escrito no perfil e não subiu (§5).
+  Vale como *tuning*, não como correção: o x264 `veryfast` faz 1080p60 neste Air
+  a ~75% de um núcleo e com a temperatura caindo. Medir o ganho é assunto da
+  Fase 7.
