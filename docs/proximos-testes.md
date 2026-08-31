@@ -206,7 +206,7 @@ python scripts/av-sync.py medir ~/Movies/2026-08-31\ 20-00-00.mkv --offset-atual
 | mediana < 40 ms e deriva ~0 | sincronizado dentro do piso do método | **fase fechada**, não mexa no offset |
 | mediana estável, deriva ~0 | offset constante | cole a linha `[audio] offset_ms = N` que o script imprime, e refaça o F3.4 para confirmar |
 | deriva medida acima do ruído (>40 ms entre as metades) | dois relógios correndo diferente | `-itsoffset` **não** resolve; é `aresample=async=1`, e vira item da Fase 7 com esta medição junto |
-| nenhum par encontrado | a claquete não estava na cena, ou tinha overlay por cima | refazer com a fonte em tela cheia |
+| nenhum par encontrado | leia a mensagem: `bipes sem flash` é a cena (fonte pequena ou overlay claro), `flashes sem bipe` é o F3.3 falhando | o script já tenta os dois limiares sozinho; se insistir, `--pic-th 0.80` |
 
 > **Compare com o viés, não com zero.** O próprio arquivo de claquete mede `+12 ms`
 > porque `blackdetect` só responde no quadro seguinte e `silencedetect` decide por

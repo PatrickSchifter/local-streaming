@@ -140,7 +140,34 @@ Três coisas que a medição precisa dizer e que o script já trata:
    "flash" e um "bipe" que nunca existiram — e como caem no mesmo instante, o par
    falso passaria por uma medição perfeita. São descartados.
 
-4. **O offset atual é premissa, e ela mora na outra máquina.** A medição roda no
+4. **A cena do OBS decide se o flash é visto.** O `blackdetect` chama um quadro
+   de preto quando uma fração `pic_th` dos pixels está escura, e os dois valores
+   úteis falham em cenários opostos — medido em 31/08 contra gravações `.mkv`
+   montadas como o OBS as grava:
+
+   | cena | `pic_th=0.98` | `pic_th=0.90` |
+   |---|---|---|
+   | fonte em tela cheia | 13 flashes | 13 flashes |
+   | fonte a 50% da largura | 13 | 13 |
+   | fonte a 25% (6% da área) | 13 | **1** |
+   | overlay claro fixo de 5% | **0** | 13 |
+
+   Com o limiar tolerante, uma fonte pequena na cena dá **bipes e nenhum flash**;
+   com o sensível, qualquer overlay claro permanente acima de 2% da tela faz o
+   quadro nunca ser preto e o resultado é o mesmo. Como nenhum dos dois serve de
+   default sozinho, o script tenta o sensível e cai para o tolerante quando o
+   primeiro volta vazio — e `--pic-th` desliga a rede para quem quiser mandar.
+
+   Isso importa pelo momento em que apareceria: o sintoma só existe **depois** dos
+   20 minutos de gravação, quando refazer custa outros 20. Foi encontrado testando
+   a medição contra um `.mkv` recodificado em vez do `.ts` que o próprio script
+   gera — o formato que a Fase 3 vai medir de verdade nunca tinha sido usado.
+
+5. **A mensagem de "nenhum par" agora separa as causas.** `bipes sem flash` é
+   cena; `flashes sem bipe` não é medição nenhuma, é o F3.3 falhando — o áudio não
+   está chegando, e mandar mexer na cena seria mandar caçar a coisa errada.
+
+6. **O offset atual é premissa, e ela mora na outra máquina.** A medição roda no
    Mac; o `[audio] offset_ms` que ela corrige está no `lanstream.toml` do
    **Windows**. Ler o config local daria um número plausível e errado, então o
    script imprime a premissa que usou — sem isso, a segunda rodada do laço

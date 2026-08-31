@@ -58,6 +58,21 @@ RUIDO = 40.0
 # medição a janela precisa ser longa. 3 min é o mínimo, 20 é o critério da fase.
 DERIVA_MINIMA = 180.0
 
+# `pic_th` é a fração de pixels escuros que faz o `blackdetect` chamar o quadro de
+# preto — e os dois valores úteis falham em cenários opostos, medido em 31/08:
+#
+#   0.98 (o default do ffmpeg): acha o flash mesmo com a fonte ocupando 6% da
+#         cena, mas QUALQUER overlay claro permanente acima de 2% da tela faz o
+#         quadro nunca ser preto, e aí não há um flash sequer.
+#   0.90: aguenta um overlay de 5%, mas exige que o flash cubra >10% da tela —
+#         com a fonte pequena na cena, encontra os bipes e nenhum flash.
+#
+# Nenhum dos dois serve de default sozinho, então o `detect_com_fallback` tenta o
+# sensível e cai para o tolerante quando o primeiro volta vazio. Descobrir isso
+# custaria a rodada inteira: o sintoma só aparece DEPOIS dos 20 min de gravação.
+PIC_TH_SENSIVEL = 0.98
+PIC_TH_TOLERANTE = 0.90
+
 _BLACK_END = re.compile(r"black_end:(\d+(?:\.\d+)?)")
 _SILENCE_END = re.compile(r"silence_end: (\d+(?:\.\d+)?)")
 
@@ -105,7 +120,7 @@ def duration(path: Path) -> float:
         return 0.0
 
 
-def detect(path: Path) -> tuple[list[float], list[float]]:
+def detect(path: Path, pic_th: float = PIC_TH_SENSIVEL) -> tuple[list[float], list[float]]:
     """Instantes de cada flash e de cada bipe, em segundos do arquivo.
 
     O `blackdetect` marca o fim de cada intervalo preto, que é exatamente o
@@ -126,7 +141,7 @@ def detect(path: Path) -> tuple[list[float], list[float]]:
             "-i",
             str(path),
             "-vf",
-            "blackdetect=d=0.2:pic_th=0.90:pix_th=0.10",
+            f"blackdetect=d=0.2:pic_th={pic_th}:pix_th=0.10",
             "-af",
             "silencedetect=noise=-40dB:d=0.2",
             "-f",
@@ -148,6 +163,21 @@ def detect(path: Path) -> tuple[list[float], list[float]]:
     return ([t for t in flashes if t < corte], [t for t in beeps if t < corte])
 
 
+def detect_com_fallback(path: Path, pic_th: float = 0.0) -> tuple[list[float], list[float]]:
+    """`detect` com o segundo limiar como rede, quando o primeiro não vê flash.
+
+    `pic_th` explícito desliga a rede: quem passou um valor quer aquele valor.
+    """
+    if pic_th:
+        return detect(path, pic_th)
+    flashes, beeps = detect(path, PIC_TH_SENSIVEL)
+    if flashes:
+        return flashes, beeps
+    print(f"  nenhum flash com pic_th={PIC_TH_SENSIVEL}; tentando {PIC_TH_TOLERANTE}")
+    print("  (é o que acontece com overlay claro fixo na cena — ver av-sync.py §pic_th)")
+    return detect(path, PIC_TH_TOLERANTE)
+
+
 def pair_up(flashes: list[float], beeps: list[float]) -> list[Pair]:
     """Casa cada bipe com o flash mais próximo, se estiverem a menos de meio período.
 
@@ -164,11 +194,28 @@ def pair_up(flashes: list[float], beeps: list[float]) -> list[Pair]:
     return pairs
 
 
-def report(path: Path, pairs: list[Pair], offset_atual: int) -> int:
+def report(
+    path: Path,
+    pairs: list[Pair],
+    offset_atual: int,
+    flashes: list[float] | None = None,
+    beeps: list[float] | None = None,
+) -> int:
+    flashes, beeps = flashes or [], beeps or []
     if not pairs:
         print("\nNenhum par claquete encontrado.")
-        print("  - O arquivo tem a claquete tocando? (o modo `claquete` gera uma)")
-        print("  - A cena do OBS estava com a fonte em tela cheia, sem overlay por cima?")
+        if beeps and not flashes:
+            # Esta combinação é específica e vale nomear: o áudio chegou, então o
+            # caminho inteiro funciona — quem não foi visto foi o flash.
+            print(f"  {len(beeps)} bipes e NENHUM flash: o áudio chegou, o branco não foi visto.")
+            print("  - a fonte está pequena na cena? o flash precisa cobrir >2% da tela")
+            print("  - há overlay claro fixo por cima? tente --pic-th 0.90 (ou 0.80)")
+        elif flashes and not beeps:
+            print(f"  {len(flashes)} flashes e NENHUM bipe: o vídeo chegou, o áudio não.")
+            print("  - é o F3.3 falhando, não a medição: o device não está entregando som")
+        else:
+            print("  - O arquivo tem a claquete tocando? (o modo `claquete` gera uma)")
+            print("  - A gravação pegou a cena certa?")
         return 1
 
     offsets = [p.offset_ms for p in pairs]
@@ -321,8 +368,8 @@ def rehearse(args) -> int:
         print(f"\nFALHA: esperava vídeo E áudio, o arquivo tem {tipos or 'nada'}")
         return 1
 
-    flashes, beeps = detect(destino)
-    return report(destino, pair_up(flashes, beeps), cfg.audio.offset_ms)
+    flashes, beeps = detect_com_fallback(destino)
+    return report(destino, pair_up(flashes, beeps), cfg.audio.offset_ms, flashes, beeps)
 
 
 def clapper(args) -> int:
@@ -369,9 +416,9 @@ def measure(args) -> int:
     if not path.exists():
         print(f"não encontrei {path}")
         return 1
-    flashes, beeps = detect(path)
+    flashes, beeps = detect_com_fallback(path, args.pic_th)
     print(f"\n{len(flashes)} flashes, {len(beeps)} bipes")
-    return report(path, pair_up(flashes, beeps), args.offset_atual)
+    return report(path, pair_up(flashes, beeps), args.offset_atual, flashes, beeps)
 
 
 def main() -> int:
@@ -394,6 +441,13 @@ def main() -> int:
     m = sub.add_parser("medir", help="mede offset e deriva numa gravação do OBS")
     m.add_argument("arquivo")
     m.add_argument("--offset-atual", type=int, default=0, dest="offset_atual")
+    m.add_argument(
+        "--pic-th",
+        type=float,
+        default=0.0,
+        dest="pic_th",
+        help=f"limiar do blackdetect; 0 = tenta {PIC_TH_SENSIVEL} e cai para {PIC_TH_TOLERANTE}",
+    )
     m.set_defaults(func=measure)
 
     args = parser.parse_args()
