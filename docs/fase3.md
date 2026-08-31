@@ -667,3 +667,69 @@ independentes convergem em ~+148 ms medidos. Menos o viés de +10,7 ms do métod
 > cuida do degrau fixo que sobra. Nenhuma das duas faz o trabalho da outra, e o
 > dia inteiro de 31/08 foi gasto porque eu tentei usar a segunda para resolver a
 > primeira.
+
+
+---
+
+## 13. O offset constante não é constante entre execuções — e é isso que trava o F3.4
+
+A rodada de confirmação (31/08 16:38, `offset_ms = -135`, `resync = true`,
+`buffer_ms = 200`) devia cair no viés de +11 ms. Deu **+743,7 ms**, faixa +719 a
++768, deriva plana. Ou seja, base de ~+879 ms.
+
+**O consenso não errou.** A votação inteira:
+
+```
+ 48 votos  ->  +743,7 ms
+  7 votos  ->  -814,9 ms
+  6 votos  -> +2275,5 ms
+```
+
+Nenhum agrupamento perto de +9 ms. Os bipes estão mesmo a +744 ms.
+
+### O que o dia mostra quando se olha junto
+
+| conexão | offset de base |
+|---|---|
+| 13:29 | −51 ms |
+| 13:41 | −47 a −26 ms |
+| 12:56 | +112 ms |
+| 12:42 | +120 ms |
+| 15:31 (resync) | +148 ms |
+| 14:13 | +151 ms |
+| 13:11 | +231 ms |
+| **16:38 (resync)** | **+879 ms** |
+
+Dentro de cada rodada o valor é estável em ±25 ms; entre rodadas varia por um
+fator de vinte, com sinal trocado. **`offset_ms` é uma constante de config, e o
+que ele precisa corrigir não é constante** — foi por isso que o −135, medido numa
+conexão e correto nela, errou por 730 ms na seguinte.
+
+Isso também explica retroativamente por que cada medição do dia parecia
+contradizer a anterior. Não havia contradição: cada uma media a sua conexão.
+
+> ⚠️ **A conclusão do §12 continua valendo, e é o que sobrou de ganho.** O
+> `resync` matou a rampa (62 min limpos contra ~45 min até estourar) e o
+> `buffer_ms = 200` matou os furos (cobertura de 55% para 80–87%). O que resta é
+> só o degrau inicial, e ele é de outra natureza: nasce na partida, não com o tempo.
+
+### A hipótese, e o teste que a decide
+
+O `ddagrab` começa a capturar assim que o filtro é criado; o dshow leva um tempo
+**variável** para abrir o device. A diferença entre os dois instantes vira o
+deslocamento daquela execução, e por isso ela muda a cada `send` e fica parada
+depois.
+
+É hipótese, não causa medida. O que a decide roda inteiro no Windows, sem o Mac:
+
+**Três gravações locais seguidas de 60 s**, o mesmo teste que já passou uma vez —
+argv do `send` com o SRT trocado por arquivo —, reiniciando o `send` entre elas, e
+`av-sync.py medir` em cada arquivo:
+
+* **os três valores diferentes** → nasce na partida do sender, e a correção tem
+  de ser no comando (alinhar as duas entradas), não no `offset_ms`;
+* **os três iguais** → o sender é determinístico e a variação entra depois dele,
+  no SRT ou no OBS — e aí o alvo é outro.
+
+Enquanto isso não for respondido, **não adianta escrever número nenhum no
+`offset_ms`**: o valor medido vale só para a conexão em que foi medido.
