@@ -429,6 +429,74 @@ def clapper(args) -> int:
     return 0
 
 
+def conferir(args) -> int:
+    """A claquete deste arquivo presta? Roda antes de gravar, não depois.
+
+    Existe por causa da rodada de 31/08: o vídeo da claquete chegou perfeito no
+    Mac e o áudio não chegou nunca, e a diferença entre "o arquivo nasceu mudo" e
+    "o Windows não está tocando o som dele" custou duas gravações para aparecer.
+    Este modo responde a primeira metade sozinho, na máquina que tem o arquivo.
+    """
+    path = Path(args.arquivo)
+    if not path.exists():
+        print(f"não encontrei {path}")
+        return 1
+
+    trilhas = _run(
+        [
+            "ffprobe",
+            "-hide_banner",
+            "-v",
+            "error",
+            "-show_entries",
+            "stream=index,codec_type,codec_name,channels,sample_rate",
+            "-of",
+            "compact=p=0",
+            str(path),
+        ]
+    )
+    tipos = set(re.findall(r"codec_type=(\w+)", trilhas))
+    print(f"\n{path.name}")
+    for linha in dict.fromkeys(x for x in trilhas.strip().splitlines() if x.strip()):
+        print("  " + linha)
+
+    if "audio" not in tipos:
+        print("\n❌ o arquivo NÃO TEM trilha de áudio — a claquete nasceu muda.")
+        print("   Gere de novo:  python scripts/av-sync.py claquete claquete.mp4 --segundos 1260")
+        return 1
+    if "video" not in tipos:
+        print("\n❌ o arquivo não tem trilha de vídeo.")
+        return 1
+
+    dur = duration(path)
+    esperado = int(dur / PERIOD) if dur else 0
+    flashes, beeps = detect_com_fallback(path, args.pic_th)
+    print(
+        f"\n  {len(flashes)} flashes e {len(beeps)} bipes em {dur:.0f} s"
+        f"  (esperado ~{esperado} de cada)"
+    )
+
+    if not beeps:
+        print("\n❌ a trilha de áudio existe mas está VAZIA — nenhum bipe.")
+        print("   É defeito na geração, não na reprodução. Gere de novo.")
+        return 1
+    if not flashes:
+        print("\n❌ nenhum flash: a trilha de vídeo não tem a claquete.")
+        return 1
+
+    pares = pair_up(flashes, beeps)
+    if not pares:
+        print("\n❌ há flashes e bipes, mas eles não se casam — o arquivo não presta.")
+        return 1
+    mediana = statistics.median([p.offset_ms for p in pares])
+    print(f"  {len(pares)} claquetes casadas, mediana {mediana:+.1f} ms")
+    print(f"\n✅ o arquivo presta. Guarde a mediana: ela é o VIÉS do método ({mediana:+.0f} ms),")
+    print("   e é com ela que a medição da gravação deve ser comparada — não com zero.")
+    if abs(len(beeps) - esperado) > max(2, esperado // 5):
+        print("\n⚠️  a contagem de bipes destoa do esperado; confira se o arquivo está inteiro.")
+    return 0
+
+
 def measure(args) -> int:
     path = Path(args.arquivo)
     if not path.exists():
@@ -455,6 +523,11 @@ def main() -> int:
     c.add_argument("--segundos", type=int, default=1260, help="21 min cobre o teste de 20")
     c.add_argument("--tamanho", default="1920x1080")
     c.set_defaults(func=clapper)
+
+    v = sub.add_parser("conferir", help="a claquete deste arquivo presta? (rode ANTES de gravar)")
+    v.add_argument("arquivo")
+    v.add_argument("--pic-th", type=float, default=0.0, dest="pic_th")
+    v.set_defaults(func=conferir)
 
     m = sub.add_parser("medir", help="mede offset e deriva numa gravação do OBS")
     m.add_argument("arquivo")

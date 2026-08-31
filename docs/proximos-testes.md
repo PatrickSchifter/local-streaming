@@ -69,6 +69,11 @@ que roda a 60 fps dentro desse teto.
 
 ## F3 — áudio do jogo 🟡 **F3.1–F3.3 passaram em 31/08; falta o número do F3.4**
 
+> 📄 **Quem está sentado no Windows quer o [`windows.md`](windows.md)**, que é o
+> mesmo protocolo sem o registro: comandos na ordem, sintoma → causa, e as regras
+> que já custaram tempo. Este documento aqui guarda o *porquê* e o resultado de
+> cada rodada.
+
 > **O bloqueio do device caiu.** O device é o **`virtual-audio-capturer`**, já
 > escrito no `lanstream.toml` do Windows, medido com o GTA tocando (mean −29,0 dB)
 > e confirmado pelo ouvido no OBS do Mac. A Mixagem estéreo do Realtek foi
