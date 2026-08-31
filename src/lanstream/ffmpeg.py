@@ -96,12 +96,24 @@ def find_binary(name: str, override: str = "") -> Path | None:
 
 
 def _run(binary: Path, *args: str) -> str:
-    """Roda o ffmpeg e devolve stdout+stderr. O ffmpeg escreve em stderr por padrão."""
+    """Roda o ffmpeg e devolve stdout+stderr. O ffmpeg escreve em stderr por padrão.
+
+    `encoding="utf-8"` explícito porque o ffmpeg escreve UTF-8 em toda plataforma,
+    inclusive no Windows, onde o `text=True` sozinho decodifica pelo locale
+    (cp1252 nesta máquina). A diferença só aparece em nome acentuado: o
+    "Mixagem estéreo" do Realtek chega nos bytes `est` + C3 A9 + `reo` e, lidos
+    como cp1252, esses dois bytes viram dois caracteres. O estrago é duplo: o
+    `role` deixa de reconhecer o device como loopback (o hint "mixagem estereo"
+    não casa com o texto remendado) e o nome que o doctor manda copiar para o
+    `[audio] device` não é mais o nome do device.
+    O console esconde isso: o mojibake volta ao normal ao ser reencodado em
+    cp1252 na saída, então a tela mostra o nome certo e a string está errada.
+    """
     try:
         proc = subprocess.run(
             [str(binary), "-hide_banner", *args],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             errors="replace",
             timeout=30,
         )

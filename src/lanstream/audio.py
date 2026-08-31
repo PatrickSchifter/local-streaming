@@ -56,7 +56,18 @@ _LOOPBACK_HINTS = (
 
 _MIC_HINTS = ("microfone", "microphone", "headset", "webcam", "line in", "entrada de linha")
 
-_PREFIX_RE = re.compile(r"^\[[a-z0-9_]+ @ [0-9a-fx]+\]\s*", re.IGNORECASE)
+# O prefixo de log do ffmpeg, que vem antes de cada linha da listagem. O nome do
+# componente já foi `[dshow @ 0x7f...]` e no 8.1 é `[in#0 @ 000001b5...]` — o `#`
+# não cabia em `[a-z0-9_]+`, o prefixo sobrevivia, e aí NENHUMA linha casava com
+# `_DEVICE_RE`: a listagem inteira virava "nenhum device de áudio". Foi o que
+# escondeu o `virtual-audio-capturer` que destravou a Fase 3, com o ffmpeg
+# listando o device e o doctor jurando que não havia nenhum.
+# Por isso o componente agora é "qualquer coisa até o `@ <hex>`": o que identifica
+# um prefixo de log é essa estrutura, não o vocabulário de nomes que o ffmpeg
+# usa nesta versão. Nenhuma linha de device começa com `[` (elas começam com
+# aspas ou com `Alternative name`), então não há o que este casamento largo possa
+# comer por engano.
+_PREFIX_RE = re.compile(r"^\[[^\]]*@ [0-9a-fx]+\]\s*", re.IGNORECASE)
 _DEVICE_RE = re.compile(r'^"(?P<name>.*)"(?:\s*\((?P<kind>audio|video)\))?$')
 _ALT_RE = re.compile(r'^Alternative name\s+"(?P<alt>.*)"$')
 _SECTION_RE = re.compile(r"^DirectShow (?P<kind>audio|video) devices", re.IGNORECASE)
