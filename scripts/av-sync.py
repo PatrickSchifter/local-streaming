@@ -189,6 +189,41 @@ def detect_com_fallback(path: Path, pic_th: float = 0.0) -> tuple[list[float], l
     return detect(path, PIC_TH_TOLERANTE)
 
 
+# Quanto um par pode se afastar do deslocamento de consenso e ainda ser a mesma
+# claquete. Uma claquete boa varia pelo quantum do quadro (17 ms a 60 fps) mais a
+# janela do silencedetect (~21 ms); 50 ms cobre isso com folga e continua muito
+# menor que o espaçamento entre claquetes.
+TOLERANCIA_MS = 50.0
+
+
+def consenso(flashes: list[float], beeps: list[float]) -> float | None:
+    """O deslocamento em que o maior número de flashes acha um bipe.
+
+    A captura real não entrega silêncio entre as claquetes: ela entrega o que a
+    máquina estiver tocando, e qualquer coisa acima do limiar vira um
+    `silence_end`. Em 31/08 uma gravação de 20 s com 4 claquetes trouxe 13 bipes.
+
+    Escolher "o bipe mais próximo de cada flash" erra nessa situação, e erra em
+    silêncio: um espúrio a 200 ms do flash ganha do verdadeiro a 125 ms. O que os
+    espúrios não conseguem é *concordar entre si* — eles estão espalhados, e as
+    claquetes verdadeiras estão todas no mesmo deslocamento, porque é o mesmo
+    caminho que as produziu.
+
+    Então o deslocamento é decidido por votação: cada par (flash, bipe) plausível
+    é um voto, e vence a janela de ±TOLERANCIA que recolher mais votos de flashes
+    distintos. É o mesmo princípio de um RANSAC de uma dimensão só.
+    """
+    votos = sorted((b - f) * 1000 for f in flashes for b in beeps if abs(b - f) < PERIOD / 2)
+    if not votos:
+        return None
+    melhor, melhor_n = None, 0
+    for centro in votos:
+        dentro = [v for v in votos if abs(v - centro) <= TOLERANCIA_MS]
+        if len(dentro) > melhor_n:
+            melhor, melhor_n = statistics.median(dentro), len(dentro)
+    return melhor
+
+
 def pair_up(flashes: list[float], beeps: list[float]) -> list[Pair]:
     """Um par por FLASH: para cada flash, o bipe mais próximo dentro de meio período.
 
@@ -206,10 +241,15 @@ def pair_up(flashes: list[float], beeps: list[float]) -> list[Pair]:
     artefatos entravam todos como medida. Iterando sobre os flashes há no máximo
     um par por claquete, e o excedente vira o diagnóstico do `report`.
     """
+    desloc = consenso(flashes, beeps)
+    if desloc is None:
+        return []
+    alvo = desloc / 1000
     pairs = []
     for flash in flashes:
-        near = min(beeps, key=lambda b: abs(b - flash), default=None)
-        if near is not None and abs(near - flash) < PERIOD / 2:
+        # O bipe mais próximo do deslocamento de consenso — não do flash.
+        near = min(beeps, key=lambda b: abs(b - flash - alvo), default=None)
+        if near is not None and abs(near - flash - alvo) * 1000 <= TOLERANCIA_MS:
             pairs.append(Pair(video=flash, audio=near))
     return pairs
 
@@ -241,6 +281,20 @@ def report(
     offsets = [p.offset_ms for p in pairs]
     mediana = statistics.median(offsets)
     print(f"\n{path.name}: {len(pairs)} claquetes")
+    # Cobertura: que fração dos flashes achou bipe no deslocamento de consenso.
+    # Um consenso forte casa quase todos; um fraco é ruído que por acaso se
+    # alinhou, e sem esta linha ele imprimiria uma mediana com cara de medida. A
+    # gravação contaminada de 31/08 12:16 — em que o tom da claquete não estava
+    # na trilha — casou 9 de 26 flashes e "mediu" +1472 ms.
+    cobertura = len(pairs) / len(flashes) if flashes else 0
+    if flashes:
+        print(f"  cobertura: {len(pairs)}/{len(flashes)} flashes ({cobertura:.0%})")
+    if cobertura < 0.7:
+        print(
+            "  ❌ CONSENSO FRACO: menos de 70% dos flashes acharam bipe. O número\n"
+            "     abaixo provavelmente é ruído que se alinhou por acaso — confira se a\n"
+            "     claquete está mesmo no áudio (av-sync.py conferir) antes de usá-lo."
+        )
     # Bipe a mais que flash é falha no áudio, não claquete: cada clique ou vão de
     # buffer interrompe o silêncio e o silencedetect o reporta. Não corrompe mais
     # a medida (ver pair_up), mas continua sendo sintoma e por isso é dito.
