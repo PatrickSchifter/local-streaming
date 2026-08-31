@@ -25,6 +25,7 @@ Duas coisas custaram tempo e estão codificadas aqui:
 
 from __future__ import annotations
 
+import shlex
 import signal
 import subprocess
 import threading
@@ -65,16 +66,13 @@ class Preview:
 
     @property
     def shell_line(self) -> str:
-        return (
-            " ".join(_quote(a) for a in self.transmit)
-            + " \\\n  | "
-            + " ".join(_quote(a) for a in self.player)
-        )
+        """Os dois comandos, coláveis num shell POSIX.
 
-
-def _quote(arg: str) -> str:
-    # A URL SRT tem `&` e `?`, que o shell interpreta.
-    return f'"{arg}"' if any(c in arg for c in " &?|<>") else arg
+        `shlex.join` e não uma regra caseira: a linha existe para ser colada, e um
+        caminho de binário com `(`, `$`, `;` ou aspas — todos legais no macOS —
+        sairia quebrado de qualquer lista de caracteres que eu escrevesse à mão.
+        """
+        return shlex.join(self.transmit) + " \\\n  | " + shlex.join(self.player)
 
 
 def build(cfg: Config, *, host: str = "") -> Preview:
@@ -106,6 +104,14 @@ def build(cfg: Config, *, host: str = "") -> Preview:
             "-hide_banner",
             "-loglevel",
             "info",
+            # O formato é declarado, não adivinhado — e isto é a diferença entre
+            # ver o jogo e ver uma janela preta. Quem entra no meio de um MPEG-TS
+            # ao vivo não vê o começo do fluxo, e o ffplay conclui "mpeg"
+            # (MPEG-PS) com uma trilha `mp2, 0 channels` que não existe, dizendo
+            # "Failed to open file 'fd:' or configure filtergraph". É a mesma
+            # razão do `input_format = mpegts` na fonte do OBS (`obs-setup.md` §1).
+            "-f",
+            "mpegts",
             # Mostra o quadro assim que chega, em vez de encher buffer: é o que
             # torna o preview útil para medir latência a olho. Em produção quem
             # bufferiza é o OBS, e ali o ajuste é outro.
@@ -140,10 +146,23 @@ def run(plan: Preview, echo) -> int:
 
     try:
         player = subprocess.Popen(
-            plan.player, stdin=transmit.stdout, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+            plan.player,
+            stdin=transmit.stdout,
+            stdout=subprocess.DEVNULL,
+            # O stderr do ffplay vai para o terminal, NÃO para um pipe. Ele
+            # escreve a linha de status continuamente (~1,6 KB/s), e um pipe que
+            # ninguém lê enche em 64 KB: o ffplay bloqueia no write e a janela
+            # congela. Medido: um clipe de 40 s termina, um de 100 s trava aos
+            # 75 s. Como o preview existe para sessões longas, isto seria o modo
+            # de falha normal, não o excepcional.
+            stderr=None,
         )
     except OSError as exc:
         transmit.kill()
+        for tubo in (transmit.stdout, transmit.stderr):
+            if tubo is not None:
+                tubo.close()
+        transmit.wait()
         raise ReceiverError(f"não consegui executar {plan.player[0]}: {exc}") from None
 
     # Fechar a nossa cópia do pipe é o que faz o srt-live-transmit receber EPIPE
@@ -155,6 +174,9 @@ def run(plan: Preview, echo) -> int:
     # ser pipe, e um processo morto a sinal perde o que estiver no buffer. Ler só
     # no fim fazia o "SRT source connected" sumir justamente nas execuções que
     # conectaram, e o aviso de "não houve conexão" saía numa sessão saudável.
+    # `conectou` é rastreado à parte porque a lista abaixo é limitada: numa
+    # sessão com muita perda o `RCV-DROPPED` sozinho encheria a memória.
+    estado = {"conectou": False}
     dito: list[str] = []
 
     def drena():
@@ -162,8 +184,19 @@ def run(plan: Preview, echo) -> int:
             return
         for linha in transmit.stderr:
             texto = linha.decode("utf-8", "replace").rstrip()
-            if texto:
-                dito.append(texto)
+            if not texto:
+                continue
+            # Ecoar não é enfeite: é aqui que aparece o
+            # `RCV-DROPPED N packet(s) ... delayed for N ms`, que o baseline §4e
+            # trata como o sinal de diagnóstico principal do projeto. Engolir
+            # essas linhas deixaria o usuário vendo imagem ruim sem explicação —
+            # o `scripts/mac-preview.sh`, que este comando substitui, as mostrava.
+            echo(texto)
+            # A frase inteira, não "connected": `disconnected` a contém.
+            if "srt source connected" in texto.lower():
+                estado["conectou"] = True
+            dito.append(texto)
+            del dito[:-200]
 
     tubo = threading.Thread(target=drena, daemon=True)
     tubo.start()
@@ -183,7 +216,7 @@ def run(plan: Preview, echo) -> int:
                 proc.kill()
 
     tubo.join(timeout=2)
-    if not any("connected" in linha.lower() for linha in dito):
+    if not estado["conectou"]:
         # Parar em "Media path" sem conectar é o sintoma nº 1 do protocolo, e a
         # mensagem existe para que ninguém o leia como "a rede está ruim".
         echo(
@@ -193,4 +226,9 @@ def run(plan: Preview, echo) -> int:
             "     exemplo. O listener atende um só, e de fora as duas causas\n"
             "     têm a mesma aparência."
         )
+        # Sem conexão é falha e precisa sair diferente de zero: tanto o
+        # `srt-live-transmit` contra porta morta quanto o `ffplay` com entrada
+        # vazia saem 0, então quem encadeasse `receive && algo` não distinguiria
+        # sessão saudável de "não havia ninguém escutando".
+        return 1
     return code

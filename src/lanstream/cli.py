@@ -165,6 +165,12 @@ def receive(
     if dry_run:
         return
 
+    # A recusa vem antes do aviso: dizer "o OBS vai cair" e sair sem abrir socket
+    # nenhum informaria um estrago que não aconteceu.
+    if not preview:
+        typer.secho("--no-preview ainda não tem outro modo; use --dry-run.", fg="red", err=True)
+        raise typer.Exit(2)
+
     # O aviso vem antes de conectar porque depois já é tarde: o listener do
     # sender atende UM cliente, e tomar essa vaga derruba o OBS sem avisar
     # ninguém do outro lado (docs/windows.md §4).
@@ -173,9 +179,6 @@ def receive(
         "pegando o stream, ele vai cair — e o sender precisa ser reiniciado depois.",
         fg="yellow",
     )
-    if not preview:
-        typer.secho("--no-preview ainda não tem outro modo; use --dry-run.", fg="red", err=True)
-        raise typer.Exit(2)
 
     code = _guard(receiver_mod.run, plan, lambda m: typer.secho(m, fg="yellow", err=True))
     raise typer.Exit(0 if code in (0, 255) else 1)
