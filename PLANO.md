@@ -485,9 +485,12 @@ na Twitch rodando 15 minutos sem dropped frames.
 
 Aqui o projeto para de ser "dois comandos" e vira algo que aguenta uma sessão real.
 
-- [ ] `supervisor.py`: se o ffmpeg morrer, reiniciar com backoff exponencial e
+- [x] `supervisor.py`: se o ffmpeg morrer, reiniciar com backoff exponencial e
       teto; logar o motivo. Nunca deixar processo órfão segurando a porta 9000.
-- [ ] **Reerguer a captura no `DXGI_ERROR_ACCESS_LOST`** — medido na Fase 2
+      O motivo sai **classificado** a partir do que o próprio ffmpeg disse antes
+      de morrer, e a classificação decide se vale reerguer — porta ocupada e
+      device de áudio ausente não valem, porque se repetiriam iguais para sempre.
+- [x] **Reerguer a captura no `DXGI_ERROR_ACCESS_LOST`** — medido na Fase 2
       (`docs/fase2.md` §8). ⚠️ **A premissa original deste item estava errada:**
       ele dizia "detectar mudança de resolução/refresh", e no caso real o desktop
       **não mudou** de modo (seguiu 1920x1080@60) — quem quebrou foi o jogo saindo
@@ -497,13 +500,15 @@ Aqui o projeto para de ser "dois comandos" e vira algo que aguenta uma sessão r
       recuperação é reiniciar o processo: o filtro `ddagrab` não tem opção de
       reinicializar sozinho.
 - [ ] Logs rotativos em arquivo + `--verbose` no console.
-- [ ] `lanstream send --watch`: fica no ar esperando o OBS conectar/reconectar,
+- [x] `lanstream send --watch`: fica no ar esperando o OBS conectar/reconectar,
       sem precisar reiniciar nada do lado do Windows.
       **A Fase 2 mostrou que metade disso já existe de graça:** o Media Source do
       OBS tem `reconnect_delay_sec = 2` e tenta sozinho a cada 2 s — medido, ele
       agarrou o sender ~22 s antes de alguém pedir (`proximos-testes.md`, regra 1).
       Com o `--watch` do lado do Windows o par passa a se recuperar **sem ação
       humana nenhuma**, e não só sem reiniciar o sender.
+      Falta a prova no Windows real; a lógica está verificada com um ffmpeg falso
+      (`docs/fase5.md` §1).
 - [ ] Auto-start opcional no Windows: gerar a entrada do Task Scheduler /
       atalho na pasta Startup via `lanstream install-autostart`.
 - [ ] (Opcional) Anúncio mDNS/Bonjour do sender, pra não precisar fixar IP.

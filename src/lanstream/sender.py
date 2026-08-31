@@ -226,8 +226,53 @@ def _start_drain(proc: subprocess.Popen, echo) -> threading.Thread | None:
     return thread
 
 
-def run(plan: Plan, echo) -> int:
-    """Roda o ffmpeg até o Ctrl+C ou até ele morrer. Devolve o código de saída.
+# O que matou o ffmpeg, lido do que ele mesmo disse antes de morrer. A ordem
+# importa: a primeira que casar vence, e as mais especificas vem antes.
+MOTIVOS: tuple[tuple[str, str, bool], ...] = (
+    # (padrao no stderr, motivo, vale a pena reiniciar)
+    (
+        "dxgi_error_access_lost",
+        "a captura perdeu o desktop (fullscreen exclusivo ou troca de sessão)",
+        True,
+    ),
+    ("887a0026", "a captura perdeu o desktop (DXGI_ERROR_ACCESS_LOST)", True),
+    ("address already in use", "a porta já está ocupada — há um ffmpeg órfão", False),
+    ("i/o error", "o receptor desconectou (o listener SRT atende um cliente só)", True),
+    ("connection was rejected", "o receptor recusou a conexão", True),
+    ("no such device", "o device de áudio sumiu", False),
+    ("could not find audio only device", "o device de áudio não existe mais", False),
+)
+
+
+@dataclass
+class Outcome:
+    """O que aconteceu numa execução do ffmpeg."""
+
+    code: int
+    interrompido: bool
+    motivo: str = ""
+    reiniciar: bool = False
+    segundos: float = 0.0
+
+
+def _classificar(linhas: list[str]) -> tuple[str, bool]:
+    """Traduz o estertor do ffmpeg em motivo e decisão de reiniciar.
+
+    Reiniciar por padrão quando não se reconhece o motivo é deliberado: o modo
+    `--watch` existe para a sessão sobreviver ao que ninguém previu, e o teto de
+    tentativas mais o backoff impedem que um erro permanente vire laço apertado.
+    O que NÃO se reinicia são as falhas que se repetiriam iguais para sempre —
+    porta ocupada, device inexistente.
+    """
+    texto = "\n".join(linhas).lower()
+    for padrao, motivo, reiniciar in MOTIVOS:
+        if padrao in texto:
+            return motivo, reiniciar
+    return "motivo não reconhecido", True
+
+
+def run(plan: Plan, echo) -> Outcome:
+    """Roda o ffmpeg até o Ctrl+C ou até ele morrer.
 
     O processo **não** é posto num grupo próprio: no Windows é justamente a
     herança do grupo do console que faz o Ctrl+C chegar ao ffmpeg, que então
@@ -247,13 +292,27 @@ def run(plan: Plan, echo) -> int:
 
     interrupted = False
     drain: threading.Thread | None = None
+    inicio = time.monotonic()
+    # As ultimas linhas ficam guardadas para o supervisor saber POR QUE o ffmpeg
+    # morreu. Sao poucas de proposito: o motivo real esta sempre no fim, e uma
+    # sessao de horas nao pode acumular stderr em memoria.
+    ultimas: list[str] = []
+
+    def registrar(linha: str, progresso: bool) -> None:
+        if not progresso:
+            ultimas.append(linha)
+            del ultimas[:-40]
+        echo(linha, progresso)
+
     try:
-        stream_output(proc.stderr, echo)
-        return proc.wait()
+        stream_output(proc.stderr, registrar)
+        code = proc.wait()
     except KeyboardInterrupt:
         interrupted = True
-        drain = _start_drain(proc, echo)
-        return _shutdown(proc, echo)
+        drain = _start_drain(proc, registrar)
+        code = _shutdown(proc, echo)
+    else:
+        pass
     finally:
         if not interrupted and proc.poll() is None:
             # Sem Ctrl+C e com o ffmpeg vivo: só acontece se a leitura do stderr
@@ -269,6 +328,15 @@ def run(plan: Plan, echo) -> int:
         # propósito: o GC fecha, e a essa altura o ffmpeg já morreu.
         if proc.stderr is not None and (drain is None or not drain.is_alive()):
             proc.stderr.close()
+
+    motivo, reiniciar = ("encerrado pelo usuário", False) if interrupted else _classificar(ultimas)
+    return Outcome(
+        code=code,
+        interrompido=interrupted,
+        motivo=motivo,
+        reiniciar=reiniciar and not interrupted,
+        segundos=time.monotonic() - inicio,
+    )
 
 
 def _shutdown(proc: subprocess.Popen, echo) -> int:

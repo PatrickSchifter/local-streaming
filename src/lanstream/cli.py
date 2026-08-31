@@ -19,6 +19,7 @@ from . import __version__
 from . import doctor as doctor_mod
 from . import receiver as receiver_mod
 from . import sender as sender_mod
+from . import supervisor as supervisor_mod
 from .config import Config, ConfigError, find_config_file
 from .config import load as load_config
 from .encoders import EncoderError
@@ -103,6 +104,10 @@ def send(
         bool,
         typer.Option("--no-audio", help="Ignora o [audio] desta rodada: só vídeo, como na Fase 2."),
     ] = False,
+    watch: Annotated[
+        bool,
+        typer.Option("--watch", help="Fica no ar: reergue o ffmpeg sozinho quando ele cair."),
+    ] = False,
 ) -> None:
     """Captura a tela do Windows e publica em SRT. Ctrl+C encerra."""
     cfg = _load(config)
@@ -134,13 +139,35 @@ def send(
     typer.secho(
         "No Mac: Media Source no OBS com "
         + cfg.network.url_for_ffmpeg(mode="caller", host=cfg.network.host or "<ip-deste-pc>")
-        + "\nCtrl+C encerra.",
+        + "\nCtrl+C encerra."
+        + ("\n--watch ligado: o sender se reergue sozinho quando cair." if watch else ""),
         fg="green",
     )
-    code = _guard(sender_mod.run, plan, _echo_ffmpeg)
+
+    def _anunciar(mensagem: str) -> None:
+        # Mensagem do supervisor, não do ffmpeg: cor diferente e sempre em linha
+        # nova, para não se confundir com a linha de progresso que se reescreve.
+        with _ECHO_LOCK:
+            if _echo_ffmpeg.pending:
+                typer.echo("")
+                _echo_ffmpeg.pending = False
+        typer.secho("[watch] " + mensagem, fg="yellow")
+
+    if watch:
+        sessao = _guard(supervisor_mod.supervisionar, cfg, plan, _echo_ffmpeg, _anunciar)
+        typer.echo("")
+        for linha in sessao.resumo():
+            typer.secho("  " + linha, fg="cyan")
+        raise typer.Exit(0)
+
+    resultado = _guard(sender_mod.run, plan, _echo_ffmpeg)
+    if resultado.motivo and not resultado.interrompido:
+        typer.secho(f"  o ffmpeg saiu: {resultado.motivo}", fg="yellow")
+        if resultado.reiniciar:
+            typer.secho("  (--watch reergueria sozinho)", fg="yellow")
     # 255 é como o ffmpeg reporta "recebi SIGINT e saí" — encerramento pedido pelo
     # usuário não é falha, e sair 255 daqui faria um script de sessão achar que foi.
-    raise typer.Exit(0 if code in (0, 255) else 1)
+    raise typer.Exit(0 if resultado.code in (0, 255) else 1)
 
 
 @app.command()
