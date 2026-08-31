@@ -450,3 +450,66 @@ que perder a linha: saía com traceback e código != 0, então quem chamasse o
 quando ela presta**. É o mesmo defeito que o `_run` do `ffmpeg.py` tinha ao
 contrário (§ commit 305559a): confundir o encoding do console com o encoding do
 texto. A saída do script agora é forçada a UTF-8 nas duas plataformas.
+
+
+---
+
+## 10. O que a rodada de 31/08 estabeleceu, e o que eu conclui demais
+
+Os dois lados mediram, e as duas medições são boas. Só uma leitura foi longe
+demais, e é a minha.
+
+**Estabelecido, das duas pontas:**
+
+| | |
+|---|---|
+| o arquivo de claquete presta | 252 flashes / 252 bipes em 1260 s, viés +10,7 ms (Windows) |
+| o capturador ouve os bipes | `silence_end` a 4,843 / 9,835 / 14,848 s — cadência de 5 s no relógio |
+| o pipeline do sender entrega alinhado | 60 s com o argv do `send`, SRT trocado por arquivo: mediana −0,3 ms contra viés +10,7 |
+| o áudio da claquete **chega** no Mac | 12:42, 4 de 4 claquetes, tom 35 dB acima do fundo na banda de 1 kHz |
+| o OBS mede atraso sozinho | `audio is lagging (over by 2490.16 ms) at max audio buffering. Restarting source audio` (12:34) |
+
+**Onde eu conclui demais.** Anunciei "é deriva, não offset" apoiado numa medição
+de **27% de cobertura** (+2167 ms) mais aquela linha do log. Tratei as duas como
+confirmação independente do mesmo número — e não são: a linha é das 12:34, de uma
+sessão anterior à reconexão das 12:39, e a medição é de outra. Das quatro
+gravações do dia, **uma só** passa no portão de cobertura que eu mesmo tinha
+acabado de escrever:
+
+| gravação | cobertura | mediana |
+|---|---|---|
+| 12:23:16 | 50% | −523 ms |
+| **12:42:04** | **100%** | **+120 ms** |
+| 12:45:13 | 50% | −1227 ms |
+| 12:45:59 | 27% | +2167 ms |
+
+Um instrumento que acabei de dotar de um aviso de confiabilidade não serve de
+nada se quem o lê ignora o aviso no primeiro resultado interessante.
+
+**Duas leituras minhas que o Windows corrigiu, e ele está certo:**
+
+* Li `−48 dB` como "device parado". O piso real daquela máquina é −91 dB, e −48 dB
+  é o que um `volumedetect` devolve quando a média inclui 5 s de silêncio para
+  cada 100 ms de bipe. Um sinal de 2% de *duty cycle* sempre parece silêncio numa
+  média — quem decide é o `silencedetect`.
+* Disse que "outro som afogou a claquete". Não havia outro som; o que eu li como
+  textura de música no espectrograma era piso de ruído renderizado numa escala
+  larga. O GTA estava na tela e mudo.
+
+O que continua **de pé** da minha parte é o mais estreito: na gravação das 12:16 o
+tom de 1 kHz não estava lá (medido na banda, nos instantes dos flashes, que é
+imune ao duty cycle), e na das 12:42 estava. As duas coisas são verdade, e é isso
+que a próxima rodada tem de explicar.
+
+### O que decide
+
+A cobertura desaba junto com o atraso, e isso tem uma explicação testável: o OBS
+**reinicia o áudio da fonte** quando o atraso passa do buffer máximo — está no log,
+duas vezes hoje. Reinício no meio da gravação come pedaços do áudio, e pedaço
+faltando é exatamente o que derruba a cobertura.
+
+Para separar emissor de receptor falta **uma gravação longa do lado do Windows**:
+o mesmo teste de 60 s que já passou, mas de 8 a 10 minutos, medido no começo e no
+fim. Sessenta segundos são curtos demais para um atraso que leva minutos para
+aparecer — do mesmo jeito que o `start_time` do §8 era curto demais por ser um
+instante só.
