@@ -17,11 +17,13 @@ import typer
 
 from . import __version__
 from . import doctor as doctor_mod
+from . import receiver as receiver_mod
 from . import sender as sender_mod
 from .config import Config, ConfigError, find_config_file
 from .config import load as load_config
 from .encoders import EncoderError
 from .ffmpeg import FFmpegError
+from .receiver import ReceiverError
 from .sender import SenderError
 
 app = typer.Typer(
@@ -53,7 +55,7 @@ def _guard(fn, *args):
     """
     try:
         return fn(*args)
-    except (ConfigError, FFmpegError, EncoderError, SenderError) as exc:
+    except (ConfigError, FFmpegError, EncoderError, SenderError, ReceiverError) as exc:
         typer.secho(f"erro: {exc}", fg="red", err=True)
         raise typer.Exit(2) from None
 
@@ -138,6 +140,44 @@ def send(
     code = _guard(sender_mod.run, plan, _echo_ffmpeg)
     # 255 é como o ffmpeg reporta "recebi SIGINT e saí" — encerramento pedido pelo
     # usuário não é falha, e sair 255 daqui faria um script de sessão achar que foi.
+    raise typer.Exit(0 if code in (0, 255) else 1)
+
+
+@app.command()
+def receive(
+    config: ConfigOption = None,
+    preview: Annotated[
+        bool, typer.Option("--preview/--no-preview", help="Abre a janela do ffplay (padrão).")
+    ] = True,
+    host: Annotated[str, typer.Option("--host", help="Sobrescreve o IP do sender.")] = "",
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Só imprime os comandos montados.")
+    ] = False,
+) -> None:
+    """Recebe o stream e mostra numa janela — o diagnóstico 'é a rede ou é o OBS?'."""
+    cfg = _load(config)
+    plan = _guard(lambda: receiver_mod.build(cfg, host=host))
+
+    typer.secho(f"  conectando em {plan.url}", fg="cyan")
+    typer.echo("")
+    typer.echo(plan.shell_line)
+    typer.echo("")
+    if dry_run:
+        return
+
+    # O aviso vem antes de conectar porque depois já é tarde: o listener do
+    # sender atende UM cliente, e tomar essa vaga derruba o OBS sem avisar
+    # ninguém do outro lado (docs/windows.md §4).
+    typer.secho(
+        "Atenção: isto consome a conexão única do sender. Se o OBS estiver\n"
+        "pegando o stream, ele vai cair — e o sender precisa ser reiniciado depois.",
+        fg="yellow",
+    )
+    if not preview:
+        typer.secho("--no-preview ainda não tem outro modo; use --dry-run.", fg="red", err=True)
+        raise typer.Exit(2)
+
+    code = _guard(receiver_mod.run, plan, lambda m: typer.secho(m, fg="yellow", err=True))
     raise typer.Exit(0 if code in (0, 255) else 1)
 
 

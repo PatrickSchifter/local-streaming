@@ -393,20 +393,47 @@ loopback nativa no Windows, então precisa de um device intermediário.
 
 **Saída:** áudio do jogo chegando no OBS, sincronizado, sem drift depois de 20 minutos.
 
-> **Onde está:** 🟡 **O lado do código está pronto e medido; falta o device.**
-> Tudo que não depende da máquina do Windows foi feito e verificado num ffmpeg
-> real. O que resta é o §F3, e ele começa perguntando se o Stereo Mix está só
-> desabilitado — o baseline não sabia responder isso.
+> **Onde está:** 🟡 **Áudio no ar e sem furos; falta o sincronismo fechar.**
+> O device é o `virtual-audio-capturer` (o Stereo Mix não serve nesta máquina —
+> a saída é HDMI e ele é da onboard, `docs/fase3.md` §1). Com `buffer_ms = 200` a
+> continuidade ficou boa (cobertura de 55% → 80–87%) e com `resync = true` a
+> rampa acabou (62 min limpos contra ~45 min até o OBS reiniciar o áudio sozinho).
+>
+> **O que trava:** o deslocamento constante **muda a cada execução do `send`** —
+> de −51 ms a +879 ms ao longo de 31/08, estável em ±25 ms dentro de cada rodada.
+> `offset_ms` é constante de config e o que ele precisa corrigir não é
+> (`docs/fase3.md` §13). O teste que decide são três gravações locais de 60 s no
+> Windows, reiniciando o `send` entre elas.
+>
+> A fase segue aberta **sem bloquear a Fase 4**: o áudio chega, o vídeo chega, e
+> o que falta é um número que ainda não é constante.
 
 ---
 
 ### Fase 4 — Lado Mac e integração com OBS
 
-- [ ] `lanstream receive --preview`: **`srt-live-transmit | ffplay`** (o ffmpeg do
+- [x] `lanstream receive --preview`: **`srt-live-transmit | ffplay`** (o ffmpeg do
       Homebrew não tem libsrt — ver `docs/baseline.md`). É a ferramenta de
       diagnóstico pra responder "o problema é a rede ou o OBS?" em 5 segundos.
-      Já validado em loopback na Fase 0.
-- [ ] `docs/obs-setup.md` com a receita exata:
+      Testado contra um listener local nos dois casos que importam: conexão
+      saudável seguida de queda do sender (sai na hora, sem órfão) e ninguém
+      escutando (avisa, e diz as **duas** causas possíveis).
+      - `-a no` e `-autoexit` entraram por medição: sem eles o preview congela no
+        último quadro quando o sender cai, e a ferramenta que existe para dizer
+        "o sender caiu" fica muda exatamente aí.
+      - ⛔ **Sem `--stats`.** A ideia era pagar a dívida do `RCV-DROPPED` da Fase 2
+        aqui, e **não dá com esta ferramenta**: com a saída em `file://con` ela
+        recusa `-s` ("would result in mixing the data and text info"), o
+        `-statsout` é aceito e não escreve nada nos três formatos, e
+        `file:///dev/null` é "Unsupported target type". Ou se consome o stream, ou
+        se leem os contadores. A dívida continua aberta, agora com motivo medido.
+- [x] `docs/obs-setup.md` com a receita exata — escrita a partir do OBS **em
+      execução**, lido por `obs-websocket`, e não transcrita de menu. Traz junto
+      as três coisas que custaram tempo: o arquivo de cena no disco é o que o OBS
+      *carregou* e não o que está valendo; a monitoração tem latência própria e
+      não entra na gravação; e as duas linhas de log (`audio buffering` e
+      `audio is lagging`) que diagnosticam áudio melhor que uma gravação.
+      Detalhes originais do item:
       - Media Source, "Local File" desmarcado, Input = URL SRT com
         `?mode=caller&latency=...`, `Input Format = mpegts`.
       - Desmarcar "Restart playback when source becomes active",
