@@ -31,6 +31,17 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+# O console do Windows abre em cp1252, e as marcas ✅/❌ deste script não cabem
+# nela: o `conferir` imprimia o diagnóstico inteiro e morria com UnicodeEncodeError
+# na última linha — a que diz o VIÉS a ser usado na comparação. Pior que perder a
+# linha, o script saía com traceback e código != 0, então quem o usasse dentro de
+# outro script leria "a claquete não presta" quando ela prestava. É o mesmo defeito
+# que o `_run` do ffmpeg.py tinha ao contrário: assumir que o encoding do console é
+# o encoding do texto. Aqui a saída é forçada a UTF-8 nas duas plataformas.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from lanstream import config as cfgmod  # noqa: E402

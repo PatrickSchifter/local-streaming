@@ -6,8 +6,13 @@ para colar; o **porquê** de cada um está no
 este documento aponta para lá em vez de repetir.
 
 > Atualizado em 31/08. **Estado:** F3.1, F3.2 e F3.3 passaram. Falta o número do
-> **F3.4** — e a rodada de hoje travou porque o áudio da claquete não chegou.
-> É por aí que se recomeça: §2.
+> **F3.4**.
+>
+> ✅ **O lado do Windows do F3.4 foi respondido e está limpo.** Medido aqui, sem o
+> Mac: a claquete presta (252/252, viés +10,7 ms), o capturador ouve os bipes na
+> cadência certa, e o pipeline inteiro gravado local entrega **12 flashes e 12
+> bipes em 60 s, mediana −0,3 ms**. O áudio sai desta máquina sincronizado —
+> `fase3.md` §10. O que falta explicar está entre o fio e o `.mkv` do OBS.
 
 ---
 
@@ -23,14 +28,33 @@ lanstream doctor
 O `doctor` tem que fechar sem FALHA. Se ele acusar `porta 9000/UDP ocupada` sem
 sender no ar, sobrou ffmpeg órfão: `Get-Process ffmpeg | Stop-Process`.
 
-## 2. O passo aberto: a claquete do F3.4
+## 2. O passo aberto: já não é aqui
 
-Na rodada de 31/08 o **vídeo** da claquete chegou perfeito no Mac (4 flashes,
-um a cada 5 s) e o **áudio** dela não chegou nunca — o que o
-`virtual-audio-capturer` entregou foi o piso do device (~−48 dB parado, contra os
-−29 dB que ele dá com o GTA tocando). Para o capturador, nada estava tocando.
+Na rodada de 31/08 o **vídeo** da claquete chegou perfeito no Mac (4 flashes, um
+a cada 5 s) e o **áudio** dela não chegou nunca. A árvore abaixo foi percorrida
+inteira nesta máquina e **deu limpo nos três degraus** (`fase3.md` §10):
 
-**Primeiro: o arquivo presta?** Isto responde sozinho, sem o Mac:
+| pergunta | resposta medida |
+|---|---|
+| o arquivo de claquete presta? | ✅ 252 flashes / 252 bipes, viés +10,7 ms |
+| o capturador ouve os bipes? | ✅ `silence_end` a cada 4,99–5,01 s |
+| o pipeline entrega as duas trilhas casadas? | ✅ 12/12 em 60 s, **mediana −0,3 ms** |
+
+O terceiro é o que fecha: são 60 s gravados com o argv **idêntico** ao do `send`,
+só trocando o SRT por arquivo. É o que o Mac receberia.
+
+> **A leitura de ~−48 dB não era o device parado.** Aqui o piso com nada tocando é
+> **−91 dB**; −48 dB é o que se lê quando a média inclui 5 s de silêncio para cada
+> 100 ms de bipe. O que decide é `silencedetect`, não `volumedetect`: um bipe de
+> 2% de duty cycle sempre parece silêncio numa média.
+
+**Então a hipótese que sobra é do OBS, e é verificável:** no F3.3 o áudio **foi
+ouvido**; no F3.4 ele não estava na **gravação**. No OBS ouvir e gravar são
+caminhos diferentes — a trilha da fonte precisa estar na track que está sendo
+gravada (`Saída > Modo Avançado > Gravação`). Uma fonte audível fora da track
+gravada dá exatamente isto: vídeo perfeito, áudio zero, nenhum erro.
+
+### Se precisar refazer a checagem daqui
 
 ```powershell
 python scripts\av-sync.py conferir claquete.mp4
@@ -42,11 +66,13 @@ python scripts\av-sync.py conferir claquete.mp4
 | ❌ `NÃO TEM trilha de áudio` | a claquete nasceu muda | gere de novo (§3, passo 4) e rode o `conferir` de novo |
 | ❌ `trilha de áudio existe mas está VAZIA` | a geração falhou no filtro de áudio | me avise: é defeito meu, não seu |
 
-**Se o arquivo presta, é reprodução.** Três coisas, nesta ordem:
+**Se um dia o arquivo prestar e mesmo assim não sair som, é reprodução.** Três
+coisas, nesta ordem:
 
 1. **Nada mais fazendo som.** O `virtual-audio-capturer` captura o endpoint
    padrão **inteiro**, não o player: jogo aberto, música, navegador e som de
-   notificação entram junto — e na rodada das 12:16 afogaram a claquete.
+   notificação entram junto. (Não foi o que houve em 12:16: o piso medido com
+   nada tocando era −91 dB, e o GTA estava na tela mas mudo.)
 2. **O player está mandando para o dispositivo padrão.** `Configurações > Som >
    Mixer de volume` mostra, por aplicativo, o dispositivo de saída e se está
    mudo. O padrão desta máquina é a **TV PHILCO** (NVIDIA HDMI) — é ele que o

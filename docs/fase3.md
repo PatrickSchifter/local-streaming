@@ -399,3 +399,54 @@ SRT, decodificando e gravando **ao mesmo tempo**. Os artefatos de áudio das
 **geometria** — offset entre as trilhas —, não a continuidade. Quem responde sobre
 continuidade é o F3.4 com o sender do Windows, e agora ele avisa quando há bipe a
 mais.
+
+## 10. O F3.4 do lado do Windows: o áudio sai daqui, e sai sincronizado
+
+A rodada das 12:16 gravou no Mac **vídeo perfeito e áudio nenhum**, e a pergunta
+que sobrou foi de que lado o áudio se perdia. As três medidas abaixo foram feitas
+nesta máquina, sem o Mac, e fecham o lado de cá.
+
+**1. O arquivo de claquete presta.** `av-sync.py conferir claquete.mp4`:
+
+```
+252 flashes e 252 bipes em 1260 s  (esperado ~252 de cada)
+252 claquetes casadas, mediana +10.7 ms
+```
+
+**2. O capturador ouve os bipes.** `silencedetect` sobre o
+`virtual-audio-capturer` com a claquete tocando, `silence_end` em 4,843 / 9,835 /
+14,848 s — intervalos de 4,99 e 5,01 s, que é a cadência de 5 s da claquete. Não
+é média de volume, é a batida certa no relógio certo.
+
+**3. E o pipeline inteiro entrega as duas trilhas casadas.** 60 s gravados com o
+argv **idêntico** ao do `send`, só trocando o SRT por arquivo:
+
+```
+12 flashes e 12 bipes em 60 s  (esperado ~12 de cada)
+12 claquetes casadas, mediana -0.3 ms
+```
+
+Contra o viés de +10,7 ms do próprio arquivo, **−0,3 ms**. O ddagrab, o
+`virtual-audio-capturer`, o hevc_nvenc, o AAC e o mux MPEG-TS entregam áudio e
+vídeo alinhados dentro do ruído do método.
+
+**O que isso elimina:** não é a claquete, não é o device, não é o encoder, não é
+o mux, e (pelo §8) não é o SRT. O áudio existe no fio. O que falta explicar está
+entre o fio e o `.mkv` do OBS.
+
+**A hipótese que sobra, e ela é verificável:** no F3.3 o áudio **foi ouvido** no
+OBS, e no F3.4 ele não estava na gravação. Ouvir e gravar são caminhos diferentes
+no OBS — a trilha da fonte precisa estar atribuída à **track que está sendo
+gravada** (em `Saída > Modo Avançado > Gravação`, as tracks são escolhidas a
+dedo). Uma fonte audível cuja trilha não está na track gravada produz exatamente
+este sintoma: vídeo perfeito, áudio zero, e nenhum erro em lugar nenhum.
+
+### O `conferir` morria no console do Windows
+
+Ele imprimia o diagnóstico inteiro e quebrava na última linha — a que diz o viés —
+com `UnicodeEncodeError` no `✅`, porque o console do Windows abre em cp1252. Pior
+que perder a linha: saía com traceback e código != 0, então quem chamasse o
+`conferir` de dentro de outro script leria "a claquete não presta" **justamente
+quando ela presta**. É o mesmo defeito que o `_run` do `ffmpeg.py` tinha ao
+contrário (§ commit 305559a): confundir o encoding do console com o encoding do
+texto. A saída do script agora é forçada a UTF-8 nas duas plataformas.
