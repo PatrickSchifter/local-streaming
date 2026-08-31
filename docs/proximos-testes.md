@@ -242,6 +242,20 @@ python scripts\av-sync.py claquete claquete.mp4 --segundos 1260
 1. **Windows:** toque o `claquete.mp4` em **tela cheia** (qualquer player), com o
    som saindo pelo device que o F3.1 escolheu — se você habilitou a Mixagem
    estéreo, é a saída normal. Rode `lanstream send`.
+
+   > ⚠️ **Nada mais pode estar tocando.** O `virtual-audio-capturer` captura o
+   > endpoint padrão inteiro, não o player: jogo aberto, música, aba de navegador
+   > e som de notificação entram junto. Na rodada de 31/08 às 12:16 foi isso que
+   > aconteceu — a gravação veio com conteúdo largo e contínuo de 0 a 12 kHz e
+   > **sem o tom de 1 kHz da claquete em lugar nenhum** (medido na banda: −79 dB
+   > no instante do flash contra −85 a −61 dB entre eles, ou seja, indistinguível
+   > do ruído). O vídeo estava perfeito, 26 flashes sem faltar um.
+   >
+   > Antes de gravar, confira as três: **(a)** nada além do player fazendo som —
+   > feche o jogo; **(b)** o player está mandando o áudio para o **dispositivo
+   > padrão** do Windows, não para um específico; **(c)** o volume está audível.
+   > E que o arquivo tem trilha de áudio: `ffprobe claquete.mp4` precisa listar
+   > um stream `aac`.
 2. **Mac:** com o Media Source pegando a imagem, **OBS → Iniciar Gravação**.
    Deixe correr **20 minutos** — é o critério de saída da fase, e é o tempo que
    uma deriva precisa para aparecer.
