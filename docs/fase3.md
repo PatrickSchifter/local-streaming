@@ -318,3 +318,84 @@ Depois de mexerem no OBS do Mac, o relato foi de que **ficou sincronizado** — 
 isso é ouvido, não medição, e o ouvido não distingue a gravação do caminho de
 **monitoração** do OBS, que tem latência própria e não entra no `.mkv`. O
 critério do F3.4 continua sendo a mediana sobre a gravação, e ele é o que falta.
+
+---
+
+## 9. O loopback do Mac: o caminho de cá, medido sem a outra máquina
+
+O §8 provou que o sender entrega alinhado — 21 ms, antes e depois do SRT — e que
+o atraso de 2–3 s nasce deste lado. Faltava dizer **onde**, e para isso não era
+preciso o Windows: dá para reproduzir o caminho inteiro aqui.
+
+Montagem de 31/08, 12:06: claquete ao vivo (`hevc_videotoolbox` 15M + AAC 160k,
+o mesmo perfil do sender) → `srt-live-transmit` em modo **listener** na 9100 →
+uma cena e uma fonte temporárias no OBS, criadas por `obs-websocket` **copiando
+as configurações da fonte real** (`buffering_mb=2`, `hw_decode=True`,
+`input_format=mpegts`) → gravação → medição. Tudo removido no fim.
+
+### 9.1 O que foi medido, e o que ele responde
+
+```
+14 claquetes em 78 s de gravação sadia
+  mediana:  -12.9 ms      12 das 14 dentro de ±21 ms
+```
+
+Contra o viés de **+12 ms** do método (§4), isso é **alinhado** — a diferença de
+~25 ms está dentro do piso de 40 ms. Portanto:
+
+> **O caminho do Mac não introduz dessincronia sistemática.** Media Source →
+> mixer → gravação sai alinhado, com as mesmas configurações da fonte real.
+
+O que sobra para explicar os 2–3 s ouvidos no F3.3 é o **caminho de monitoração**,
+e a evidência apareceu ao ler o OBS ao vivo em vez do arquivo de cena: o
+`monitorType` no disco (29/08) era `Monitor Off` e o valor **em execução** era
+`MONITOR_AND_OUTPUT` — ou seja, foi ligado naquele dia. A monitoração tem
+latência própria e **não entra no `.mkv`**, que é exatamente a ressalva que o §8
+levantou. O `Sync Offset` estava em 0, a fonte não estava muda, e o log não tinha
+uma linha de `audio buffering` sequer naquela sessão.
+
+> ⚠️ **O arquivo de cena mente sobre o presente.** O OBS só grava o
+> `basic/scenes/*.json` ao sair ou ao trocar de coleção; com o OBS aberto desde
+> 29/08, o que está no disco é o que ele **carregou**, não o que está valendo. Quem
+> for conferir configuração de fonte pergunte por `obs-websocket`.
+
+### 9.2 O buffer de áudio do OBS é *sticky* — e isso é risco de sessão
+
+Quando o script matou o sender local, o log registrou:
+
+```
+adding 938 milliseconds of audio buffering, total audio buffering is now 960 ms
+```
+
+O OBS sobe esse buffer sozinho quando os timestamps chegam trêmulos ou o stream
+seca, e ele **não desce**: só zera reiniciando a fonte. Não foi o que aconteceu no
+F3.3 (o log daquela sessão não tem a linha), mas é o mecanismo que produziria
+exatamente aquele sintoma — e um engasgo de rede no meio de uma live deixaria até
+um segundo de atraso permanente no áudio. **Se o áudio "atrasar sozinho" durante
+uma sessão, a ação é reiniciar a fonte, não mexer no `offset_ms`.** Vale procurar
+essa linha no log antes de qualquer outra hipótese.
+
+### 9.3 O instrumento pareava na direção errada
+
+A gravação trouxe bipes que não eram claquete: 78 s com 16 flashes produziram
+**30 pares**, com a faixa indo a ±2,4 s. A causa era o `pair_up` iterar sobre os
+**bipes** — cada clique, vão de buffer ou underrun interrompe o silêncio, o
+`silencedetect` reporta um `silence_end`, e aquilo entrava como medida.
+
+O flash é o evento confiável: ele só existe se um quadro branco chegou. Iterando
+sobre os flashes há no máximo um par por claquete, e os mesmos dados passaram de
+30 pares com faixa de ±2,4 s para **14 pares, mediana −12,9 ms, faixa de −298 a
+−2 ms**. O excedente de bipes virou diagnóstico impresso — ele não é
+dessincronia, é **continuidade**: áudio com falha.
+
+Isto teria estragado a medição do F3.4 sem dar sinal: a mediana sobreviveu aqui
+por sorte estatística, e num arquivo com mais artefatos ela não sobreviveria.
+
+### 9.4 O que isto NÃO prova
+
+O sender do teste é local: um MacBook Air fanless encodando 1080p60, servindo
+SRT, decodificando e gravando **ao mesmo tempo**. Os artefatos de áudio das
+9.3 podem ser dessa disputa e não do caminho real. O que o teste isola é a
+**geometria** — offset entre as trilhas —, não a continuidade. Quem responde sobre
+continuidade é o F3.4 com o sender do Windows, e agora ele avisa quando há bipe a
+mais.

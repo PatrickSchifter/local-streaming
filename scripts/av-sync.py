@@ -179,18 +179,27 @@ def detect_com_fallback(path: Path, pic_th: float = 0.0) -> tuple[list[float], l
 
 
 def pair_up(flashes: list[float], beeps: list[float]) -> list[Pair]:
-    """Casa cada bipe com o flash mais próximo, se estiverem a menos de meio período.
+    """Um par por FLASH: para cada flash, o bipe mais próximo dentro de meio período.
 
     Meio período é o limite que impede o erro clássico desta medição: com uma
     dessincronia grande, o bipe n casaria com o flash n+1 e o resultado sairia
     bonito e errado. Fora dessa janela o par é descartado, e a contagem de pares
     aparece no relatório justamente para que um descarte em massa não passe.
+
+    A direção importa, e a versão anterior a tinha errada — iterava sobre os
+    bipes. O flash é o evento confiável: ele só existe se um quadro branco chegou.
+    O bipe não: qualquer falha do áudio (um clique, um vão de buffer, um
+    underrun) interrompe o silêncio e o `silencedetect` reporta um `silence_end`
+    que não é claquete nenhuma. Medido em 31/08 no loopback do Mac, uma gravação
+    de 78 s com 16 claquetes produziu 30 pares, com a faixa indo a ±2,4 s — os
+    artefatos entravam todos como medida. Iterando sobre os flashes há no máximo
+    um par por claquete, e o excedente vira o diagnóstico do `report`.
     """
     pairs = []
-    for beep in beeps:
-        near = min(flashes, key=lambda f: abs(f - beep), default=None)
-        if near is not None and abs(near - beep) < PERIOD / 2:
-            pairs.append(Pair(video=near, audio=beep))
+    for flash in flashes:
+        near = min(beeps, key=lambda b: abs(b - flash), default=None)
+        if near is not None and abs(near - flash) < PERIOD / 2:
+            pairs.append(Pair(video=flash, audio=near))
     return pairs
 
 
@@ -221,6 +230,15 @@ def report(
     offsets = [p.offset_ms for p in pairs]
     mediana = statistics.median(offsets)
     print(f"\n{path.name}: {len(pairs)} claquetes")
+    # Bipe a mais que flash é falha no áudio, não claquete: cada clique ou vão de
+    # buffer interrompe o silêncio e o silencedetect o reporta. Não corrompe mais
+    # a medida (ver pair_up), mas continua sendo sintoma e por isso é dito.
+    extras = len(beeps) - len(pairs)
+    if beeps and extras > max(1, len(pairs) // 10):
+        print(
+            f"  ⚠️  {extras} bipes além das claquetes: o áudio tem falhas "
+            "(clique, vão de buffer, underrun) — não é dessincronia, é continuidade"
+        )
     print(f"  {'t vídeo':>9} {'t áudio':>9} {'offset':>9}")
     for p in pairs:
         print(f"  {p.video:9.3f} {p.audio:9.3f} {p.offset_ms:+8.1f}ms")
