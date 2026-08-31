@@ -562,3 +562,71 @@ Escrever `offset_ms = -220` (os +231 medidos menos o viés de +10,7 do método) 
 `lanstream.toml` do Windows e **medir de novo**. Se a mediana cair perto do viés,
 a correção vale e o F3.4 fecha; se cair perto de −110, o valor não é constante
 entre rodadas e a fase precisa de uma explicação antes de um número.
+
+
+---
+
+## 12. O atraso acumula por dezenas de minutos, e quem o mede bem é o log do OBS
+
+Duas coisas foram medidas em 31/08 à tarde, e elas só fazem sentido juntas.
+
+### 12.1 O `buffer_ms = 50` estava furando o áudio
+
+Com `buffer_ms = 200` no lugar dos 50, na mesma máquina e no mesmo device:
+
+| | `buffer_ms = 50` | `buffer_ms = 200` |
+|---|---|---|
+| cobertura | 139/252 (**55%**) | 103/129 (**80%**) |
+| estabilidade | blocos de 5 min variando 20 ms | blocos de 2 min dentro de **±3,5 ms** |
+| mediana | −260 ms (consenso fraco) | +151,3 ms |
+
+Os 50 ms eram escolha minha, escrita no §2 como "conservador: baixo o suficiente
+para não dominar o offset, alto o suficiente para não picotar". A segunda metade
+da frase estava errada para este device — o `virtual-audio-capturer` é um filtro
+DirectShow sem manutenção desde ~2018, e 50 ms de buffer o fazem perder amostra.
+**Perder ~45% das claquetes não é dessincronia, é continuidade**, e foi o aviso
+que o script vinha dando desde a primeira gravação do dia.
+
+### 12.2 O que sobra é rampa, e ela leva ~45 minutos para aparecer
+
+O OBS mediu, sozinho e duas vezes, o áudio da fonte atrasado — e agiu:
+
+```
+12:34:07  audio is lagging (over by 2490.16 ms) at max audio buffering. Restarting source audio.
+14:13:07  audio is lagging (over by 2204.43 ms) at max audio buffering. Restarting source audio.
+```
+
+Os dois em conexões com ~45 minutos de vida. Dentro de qualquer janela de 10 ou
+20 minutos o valor é plano — foi por isso que as medições de deriva deram sempre
+"dentro do ruído". A rampa existe, mas é lenta demais para a janela: o instrumento
+adequado para ela é **o log do OBS**, que imprime o acumulado no momento em que
+age. Duas linhas de log valem mais que três gravações de 20 minutos aqui.
+
+> **Isto reabilita o diagnóstico que o §10 tinha retirado, mas por outro caminho.**
+> Lá eu disse "é deriva" apoiado numa medição de 27% de cobertura e numa linha de
+> log de outra sessão. O recuo estava certo: aquela evidência não sustentava a
+> conclusão. Agora há duas linhas de log em duas conexões diferentes, ambas com o
+> mesmo valor de ordem de grandeza e ambas seguidas de ação do OBS. Mudou a
+> evidência, não a vontade de acreditar nela.
+
+### 12.3 A correção: `[audio] resync`
+
+`aresample=async=1:min_hard_comp=0.100:first_pts=0` no áudio de saída, ligado por
+default. Ele reamostra para manter o áudio colado na linha de tempo, o que é
+exatamente o que uma diferença de relógio pede — e é o que nenhum `offset_ms`
+alcança, porque offset é constante e rampa não é.
+
+| Parâmetro | Por quê |
+|---|---|
+| `async=1` | autoriza esticar/comprimir para fechar o buraco |
+| `min_hard_comp=0.100` | acima de 100 ms corta ou insere em vez de esticar — esticar buraco grande vira artefato audível |
+| `first_pts=0` | ancora o começo em zero; sem isso um atraso na primeira amostra vira silêncio inicial em vez de correção |
+
+Verificado no ensaio local com o argv real: o ffmpeg aceita `-af` junto com o
+`-filter_complex` do vídeo, as duas trilhas saem no TS e a medição continua no
+viés (+10,7 ms, 12 de 12). Com o áudio desligado o comando segue **byte a byte** o
+da Fase 2.
+
+**O que decide:** uma sessão de 45 min a 1 h com `resync = true`, olhando o log do
+OBS. Se as linhas `audio is lagging` não aparecerem, a rampa foi corrigida e o
+F3.4 fecha com `offset_ms` cuidando só do que sobrar de constante.

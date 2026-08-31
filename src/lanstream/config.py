@@ -137,7 +137,21 @@ class AudioConfig:
     # Correção de sincronismo, em milissegundos. POSITIVO ATRASA O ÁUDIO. Vira
     # `-itsoffset` na entrada do dshow. O valor não se adivinha: mede-se com o
     # scripts/av-sync.py, que imprime a linha pronta para colar aqui.
+    #
+    # Corrige um deslocamento CONSTANTE. Não corrige rampa: se o áudio se afasta
+    # do vídeo com o tempo, o problema é de relógio e quem resolve é o `resync`.
     offset_ms: int = 0
+
+    # Reamostra o áudio para mantê-lo colado na linha de tempo (`aresample=async`).
+    # Ligado por default por causa do que a rodada de 31/08 mediu: o OBS acusou o
+    # áudio 2204 ms e 2490 ms atrasado, duas vezes, em conexões de ~45 min, e
+    # reiniciou a fonte sozinho. Isso é o relógio do device de captura correndo
+    # diferente do relógio da captura de vídeo — dessincronia que cresce, e que
+    # nenhum `offset_ms` alcança porque ele é uma constante.
+    #
+    # O custo é o áudio ser esticado ou comprimido em frações de milissegundo por
+    # segundo, inaudível. Desligue só para medir a deriva crua (docs/fase3.md §12).
+    resync: bool = True
 
     def validate(self) -> None:
         parse_bitrate(self.bitrate, "[audio] bitrate")

@@ -209,7 +209,16 @@ def encode_args(cfg: AudioConfig) -> list[str]:
     canal) sairia mono do outro lado e a descoberta seria na live; AAC porque é o
     que a Twitch aceita e o que o OBS repassa sem recodificar.
     """
+    filtro = (
+        # async=1 autoriza o resample a esticar/comprimir para fechar o buraco;
+        # min_hard_comp=0.100 diz que acima de 100 ms ele corta ou insere em vez
+        # de esticar, porque esticar um buraco grande vira artefato audível.
+        # first_pts=0 ancora o começo em zero: sem isso, um atraso na primeira
+        # amostra vira silêncio inicial em vez de correção.
+        ["-af", "aresample=async=1:min_hard_comp=0.100:first_pts=0"] if cfg.resync else []
+    )
     return [
+        *filtro,
         "-c:a",
         "aac",
         "-b:a",
@@ -225,4 +234,8 @@ def summary(cfg: AudioConfig) -> str:
     """A linha do `send` que responde 'o que vai de áudio'."""
     kbps = parse_bitrate(cfg.bitrate, "[audio] bitrate") // 1000
     offset = f", offset {cfg.offset_ms:+d} ms" if cfg.offset_ms else ""
-    return f'aac {kbps}k 48kHz estéreo — dshow "{cfg.device}" (buffer {cfg.buffer_ms} ms{offset})'
+    resync = "" if cfg.resync else ", SEM resync"
+    return (
+        f'aac {kbps}k 48kHz estéreo — dshow "{cfg.device}" '
+        f"(buffer {cfg.buffer_ms} ms{offset}{resync})"
+    )

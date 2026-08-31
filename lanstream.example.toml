@@ -92,7 +92,17 @@ buffer_ms = 50
 # docs/fase3.md §3). Não se adivinha: meça com
 #   python scripts/av-sync.py medir <gravacao-do-obs.mkv>
 # que imprime esta linha pronta. Abaixo de 40 ms não mexa: é o piso do método.
+#
+# Corrige deslocamento CONSTANTE. Se o áudio se afasta do vídeo com o tempo, o
+# problema é de relógio e quem resolve é o `resync` abaixo.
 offset_ms = 0
+
+# Reamostra o áudio para mantê-lo colado na linha de tempo. Ligado por default
+# porque em 31/08 o OBS acusou o áudio 2204 ms e 2490 ms atrasado, duas vezes, em
+# conexões de ~45 min, e reiniciou a fonte sozinho (docs/fase3.md §12). Custo:
+# esticar ou comprimir o áudio em frações de ms por segundo, inaudível.
+# Desligue só para medir a deriva crua.
+resync = true
 
 [paths]
 # Deixe vazio para procurar no PATH. Preencha só se houver mais de um ffmpeg
