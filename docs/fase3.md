@@ -630,3 +630,40 @@ da Fase 2.
 **O que decide:** uma sessão de 45 min a 1 h com `resync = true`, olhando o log do
 OBS. Se as linhas `audio is lagging` não aparecerem, a rampa foi corrigida e o
 F3.4 fecha com `offset_ms` cuidando só do que sobrar de constante.
+
+
+### 12.4 O `resync` aguentou 62 minutos — a rampa acabou
+
+Sessão de 31/08, conexão às 15:31:09 com `resync = true` e `buffer_ms = 200`.
+Vigília no log do OBS até as 16:33, **62 minutos de conexão contínua**:
+
+```
+15:31:09  [Media Source 'Jogo (Windows via SRT)']: Reconnected.
+(nada mais)
+```
+
+Nenhuma linha de `audio is lagging`, nenhum `audio buffering`, nenhuma
+reconexão. Contra o histórico do mesmo dia:
+
+| conexão | idade quando o OBS agiu | acumulado |
+|---|---|---|
+| 12:39 | ~45 min | 2490 ms |
+| 13:28 | ~45 min | 2204 ms |
+| **15:31, com `resync`** | **62 min sem agir** | — |
+
+E o offset constante que sobrou, medido com o `resync` ligado numa conexão nova
+(5 min, cobertura 87% — a melhor do dia):
+
+```
+mediana +144,7 ms      blocos de 1 min: +142,0 / +152,7 / +140,0 / +135,9 / +150,0
+```
+
+Contra a rodada anterior (+151,3 ms, `buffer_ms=200` sem resync), duas medições
+independentes convergem em ~+148 ms medidos. Menos o viés de +10,7 ms do método:
+**~+135 ms de offset constante**, que é o que o `offset_ms` corrige.
+
+> **As duas correções são complementares, e é por isso que as duas existem.** O
+> `resync` cuida da rampa — relógios diferentes se afastando —, e o `offset_ms`
+> cuida do degrau fixo que sobra. Nenhuma das duas faz o trabalho da outra, e o
+> dia inteiro de 31/08 foi gasto porque eu tentei usar a segunda para resolver a
+> primeira.
