@@ -67,13 +67,65 @@ que roda a 60 fps dentro desse teto.
 
 ---
 
-## F3 — áudio do jogo 🔴 **é o próximo, e o passo 1 pode encerrar a fase**
+## F3 — áudio do jogo 🟡 **F3.1–F3.3 passaram em 31/08; falta o número do F3.4**
+
+> **O bloqueio do device caiu.** O device é o **`virtual-audio-capturer`**, já
+> escrito no `lanstream.toml` do Windows, medido com o GTA tocando (mean −29,0 dB)
+> e confirmado pelo ouvido no OBS do Mac. A Mixagem estéreo do Realtek foi
+> testada e **não serve nesta máquina**: a saída é HDMI e o Stereo Mix é da placa
+> onboard — o porquê está em `docs/fase3.md` §1.
+>
+> **O que sobrou é do Mac, e é uma coisa só: a mediana do F3.4 sobre uma
+> gravação.** O passo "Do lado do Mac" logo abaixo tem os comandos prontos.
+>
+> ⚠️ **Não mexa no `[audio] offset_ms` antes de medir.** No F3.3 o áudio parecia
+> 2–3 s atrasado; o sender foi medido e está alinhado em **21 ms**, antes e depois
+> do SRT (`docs/fase3.md` §8). O atraso nasce do lado do Mac, e `offset_ms`
+> corrige o sender — escrever 2500 ali quebraria o que já está certo.
 
 Tudo o que não depende da máquina do Windows já está feito e medido
 (`docs/fase3.md`): o comando com as duas trilhas foi montado, rodado num ffmpeg
 de verdade e verificado com `ffprobe`, e o sinal do `-itsoffset` foi medido em
-vez de presumido. O que falta é o que só existe aí: **um device que exponha o
-áudio do sistema como captura**.
+vez de presumido.
+
+### Do lado do Mac — o que falta, em ordem
+
+Nada precisa ser instalado nem gerado aqui: a claquete nasce no Windows (ela é
+`.gitignore`, cada máquina gera a sua) e a medição roda sobre a gravação do OBS.
+
+**1. Antes de tudo, o log do OBS.** No F3.3 o áudio soou 2–3 s atrasado e a causa
+não foi encontrada — só foi provado que não é o sender. Procure em
+`Ajuda > Arquivos de Log > Mostrar Logs`:
+
+```
+adding N ms of audio buffering, total audio buffering is now N ms
+```
+
+O OBS sobe esse buffer sozinho quando os timestamps chegam trêmulos, e ele é
+*sticky*: só zera reiniciando a fonte. Confira junto o `Sync Offset` da fonte em
+**Propriedades de Áudio Avançadas** (tem que ser 0) e o **Network Buffering** do
+Media Source. Se o relato de "ficou sincronizado" veio do **monitoramento**, vale
+lembrar que o caminho de monitoração tem latência própria e **não** entra no
+`.mkv` — o que decide é a medição do passo 3.
+
+**2. Gravar.** Com o Windows tocando o `claquete.mp4` em tela cheia e o `send` no
+ar, `OBS → Iniciar Gravação`. **Comece com 2 minutos**: a mediana aparece igual
+num arquivo curto, e se algo estiver errado o prejuízo é 2 min em vez de 20. Os
+20 min continuam sendo o critério de saída, mas eles medem **deriva**, não offset
+— vale rodá-los depois que a mediana curta vier boa.
+
+**3. Medir:**
+
+```bash
+python scripts/av-sync.py medir ~/Movies/<arquivo>.mkv --offset-atual 0
+```
+
+`--offset-atual 0` porque o `lanstream.toml` do Windows está com `offset_ms = 0` —
+o script não lê o config da outra máquina, então esse número é premissa e precisa
+bater com o que está lá.
+
+**4. O que o resultado decide** está na tabela do F3.4, mais abaixo. Compare com o
+viés de **+12 ms** do próprio arquivo de claquete, não com zero.
 
 > **A restrição que ordena as tentativas:** o áudio precisa continuar saindo pela
 > caixa de som — quem está jogando está sentado nela. Uma captura que emudece o
@@ -137,7 +189,7 @@ lanstream doctor --audio
 ```toml
 [audio]
 enabled = true
-device = "Mixagem estéreo (Realtek(R) Audio)"   # o nome EXATO do F3.1
+device = "virtual-audio-capturer"   # o nome EXATO do F3.1 — este é o desta máquina
 ```
 
 ```powershell
@@ -231,11 +283,11 @@ captura, e isso se mede em vez de se supor.
 
 | Passo | Resultado |
 |---|---|
-| F3.1 device encontrado | |
-| F3.2 doctor OK | |
-| F3.3 som no OBS | |
-| F3.4 mediana / deriva | |
-| F3.5 fps / bitrate / drops | |
+| F3.1 device encontrado | ✅ `virtual-audio-capturer` — mean −29,0 dB / max −11,4 dB, 48 kHz estéreo |
+| F3.2 doctor OK | ✅ tudo OK, zero AVISO |
+| F3.3 som no OBS | ✅ sai som do jogo; as duas trilhas no mux |
+| F3.4 mediana / deriva | 🔴 **falta** — é o único item aberto da fase |
+| F3.5 fps / bitrate / drops | 🟡 parcial: 60 fps, speed 0,995–0,997x, 15,6 Mbps *com* áudio; faltam os 20 min |
 
 ---
 

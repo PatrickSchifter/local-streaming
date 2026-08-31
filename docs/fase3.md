@@ -46,6 +46,35 @@ A ordem mudou aqui por causa da restrição do parágrafo acima: o VB-CABLE sozi
 é justamente o que põe latência no ouvido do jogador. Ele continua na lista, mas
 depois do que não tem esse efeito colateral.
 
+### O que essa tabela não dizia: o Stereo Mix é do Realtek, não do sistema
+
+Habilitar a Mixagem estéreo desta máquina não resolveu, e a razão não está em
+nenhuma coluna acima. O Stereo Mix espelha a mistura da placa **onboard**; aqui o
+único endpoint de reprodução ativo é a "TV PHILCO" na *NVIDIA High Definition
+Audio* (HDMI), e todo endpoint Realtek está NOTPRESENT ou UNPLUGGED. O jogo sai
+pelo HDMI, o Stereo Mix escuta o Realtek: são caminhos diferentes, e nenhum ajuste
+de volume junta os dois.
+
+Medido com `-af volumedetect`, 3 s, com o GTA tocando:
+
+| Device | mean | max |
+|---|---|---|
+| `virtual-audio-capturer` | −29,0 dB | −11,4 dB |
+| `Mixagem estéreo (Realtek …)` | −90,3 dB | −76,3 dB |
+
+O Stereo Mix **abre** (`rc 0`, stereo 44,1 kHz) e entrega silêncio — é o modo de
+falha caro, porque não parece falha em lugar nenhum: o device existe, o doctor o
+lista como loopback, o ffmpeg não reclama, e o silêncio só aparece do outro lado.
+Por isso a linha 1 da tabela ganha uma pré-condição: *o Stereo Mix só serve se a
+saída padrão do Windows for a placa que tem o Stereo Mix*. Com o áudio indo para
+um monitor ou TV por HDMI/DisplayPort — que é o caso desta máquina — ele está fora
+antes de ser testado, e o `virtual-audio-capturer` sobe para primeiro por
+capturar o endpoint padrão seja ele qual for.
+
+Quem for conferir isso de novo: `Som > Reprodução` mostra qual é o dispositivo
+padrão, e é o nome dele que precisa bater com a placa do Stereo Mix. Um
+`volumedetect` de 3 s com som tocando responde a mesma pergunta sem abrir nada.
+
 ## 2. O comando: com áudio muda de forma, sem áudio não muda nada
 
 Com `[audio] enabled = false` o argv sai **byte a byte igual** ao que a Fase 2
@@ -233,7 +262,59 @@ sobrou um `plan.argv[:0] or argv` que era sempre a segunda metade.
 |---|---|
 | ✅ | argv com áudio, `--no-audio`, config (`buffer_ms`, `offset_ms`), doctor, medição |
 | ✅ | forma do comando validada num ffmpeg real (ensaio local) |
-| 🔴 | **um device de captura no Windows** — sem isso não há o que testar |
-| 🔴 | §F3 no Windows: device, A/V sync medido, 20 min sem deriva |
+| ✅ | **um device de captura no Windows** — `virtual-audio-capturer`, medido com o jogo tocando |
+| ✅ | §F3.1–F3.3 no Windows: device, doctor, som no OBS — rodados em 31/08 (§8) |
+| 🔴 | §F3.4: a mediana do A/V sync sobre uma gravação, e 20 min sem deriva |
 
-O bloqueio é o device. Todo o resto está pronto para a primeira rodada.
+**O bloqueio do device caiu em 31/08.** Com o GTA aberto, o
+`virtual-audio-capturer` entrega mean −29,0 dB / max −11,4 dB em 48 kHz estéreo —
+a taxa que o `encode_args` já pede, então nem resample entra no caminho. A
+Mixagem estéreo, testada no mesmo minuto, deu silêncio pelo motivo do §1: ela é
+do Realtek e a saída desta máquina é HDMI. Não há device a instalar; o que falta
+é rodar a coisa inteira contra o Mac e medir o offset com o `scripts/av-sync.py`.
+O que a rodada de 31/08 produziu, incluindo um atraso de 2–3 s que **não** era do
+sender, está no §8.
+
+## 8. A rodada de 31/08 no Windows: o que passou, e onde o atraso **não** estava
+
+Primeira vez com device real na máquina do Windows. F3.1, F3.2 e F3.3 passaram;
+o número do F3.4 ainda não existe.
+
+| passo | resultado |
+|---|---|
+| F3.1 device | `virtual-audio-capturer` — mean −29,0 dB / max −11,4 dB com o GTA tocando, 48 kHz estéreo |
+| F3.2 doctor | tudo OK, zero AVISO; `device de áudio: "virtual-audio-capturer" (loopback)` |
+| F3.3 som no OBS | **sai som do jogo** — as duas trilhas no mux, `Stream #0:1: Audio: aac (LC), 48000 Hz, stereo, 160 kb/s` |
+| F3.4 mediana / deriva | 🔴 **não medido** |
+| F3.5 fps / bitrate | parcial: 60 fps, `speed` 0,995–0,997x, 15,6 Mbps *com* áudio, sem `Thread message queue blocking` |
+
+### O atraso de 2–3 s, e por que ele não é do sender
+
+O F3.3 veio com um sintoma: no Mac, **a imagem chegava 2–3 s antes do áudio**.
+Isso é grande demais para o `-itsoffset`, que trabalha em dezenas de ms — e a
+tentação era mexer no `offset_ms` até "ficar bom". Em vez disso, dois `start_time`:
+
+| onde | video | audio | Δ |
+|---|---|---|---|
+| `.ts` gravado direto do pipeline, sem rede | 1,421333 | 1,400000 | **21 ms** |
+| o mesmo stream **depois de ir e voltar pelo SRT** | 1,421333 | 1,400000 | **21 ms** |
+
+Idênticos. **O mux nasce alinhado e o SRT não desalinha.** Os 21 ms estão dentro
+do piso do §4, e o que sobra é o lado do Mac.
+
+O teste do SRT precisou de uma porta diferente da 9000, e o motivo é a regra 1:
+o OBS do Mac reconecta sozinho a cada 2 s e **já tinha tomado a conexão única**
+do listener — o caller local levou `I/O error` sem o sender ter nada de errado.
+Quem repetir isto: use outra porta em vez de concluir que o listener quebrou.
+
+**O que fica registrado como regra:** `offset_ms` corrige o *sender*, e o sender
+está certo. Antes de escrever qualquer número nele, meça os dois `start_time` —
+um `-itsoffset` de 2500 ms "consertaria" pelo ouvido o que a medição mostra
+alinhado, e o F3.4 seguinte acusaria a coisa errada.
+
+### O que ainda não está respondido
+
+Depois de mexerem no OBS do Mac, o relato foi de que **ficou sincronizado** — mas
+isso é ouvido, não medição, e o ouvido não distingue a gravação do caminho de
+**monitoração** do OBS, que tem latência própria e não entra no `.mkv`. O
+critério do F3.4 continua sendo a mediana sobre a gravação, e ele é o que falta.
