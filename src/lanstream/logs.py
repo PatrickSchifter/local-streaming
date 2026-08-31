@@ -39,6 +39,12 @@ def caminho_padrao(configurado: str = "") -> Path:
 def configurar(destino: Path, *, max_mb: int = 5, manter: int = 5, verbose: bool = False):
     """Prepara o logger. Devolve None se não der para escrever — nunca levanta.
 
+    `verbose` liga o nível DEBUG, e é isso que faz a linha de progresso ser
+    guardada **inteira** em vez de amostrada: quem chama registra o progresso em
+    DEBUG e a amostra em INFO (ver `cli.py`). Não há handler de console aqui de
+    propósito — o console já recebe tudo do ffmpeg direto; duplicar as mesmas
+    linhas por um segundo caminho só faria ruído.
+
     Não poder gravar log é motivo para avisar, não para impedir a transmissão:
     quem está prestes a jogar não quer descobrir que o `send` não sobe porque uma
     pasta não pôde ser criada.

@@ -119,7 +119,12 @@ def send(
         typer.Option("--watch", help="Fica no ar: reergue o ffmpeg sozinho quando ele cair."),
     ] = False,
     verbose: Annotated[
-        bool, typer.Option("--verbose", "-v", help="Mostra no console o que só iria para o log.")
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Guarda no log TODAS as linhas de progresso, não só a amostra de 30s.",
+        ),
     ] = False,
 ) -> None:
     """Captura a tela do Windows e publica em SRT. Ctrl+C encerra."""
@@ -183,6 +188,12 @@ def send(
             diario.info("%s", linha)
         elif batimento.passa():
             diario.info("[batimento] %s", linha)
+        else:
+            # As linhas de progresso entre uma amostra e outra só entram com
+            # `--verbose`, que liga o nível DEBUG. É o que a flag faz: trocar o
+            # batimento pelo registro completo, para quando se está caçando um
+            # engasgo de segundos e a amostra de 30 s é grossa demais.
+            diario.debug("%s", linha)
 
     def _anunciar(mensagem: str) -> None:
         # Mensagem do supervisor, não do ffmpeg: cor diferente e sempre em linha
@@ -288,6 +299,11 @@ def install_autostart(
     ] = False,
 ) -> None:
     """Faz o `send --watch` subir sozinho no login do Windows."""
+    if remove and dry_run:
+        # Quem aprendeu que --dry-run não toca no disco esperaria o mesmo aqui, e
+        # apagar mesmo assim seria a pior traição possível dessa expectativa.
+        typer.secho(f"seria removido: {autostart_mod.alvo_legivel()}", fg="green")
+        return
     if remove:
         caminho = _guard(autostart_mod.remover)
         typer.secho(f"removido: {caminho}" if caminho else "não havia nada instalado.", fg="green")
@@ -295,6 +311,15 @@ def install_autostart(
 
     caminho, texto = _guard(lambda: autostart_mod.instalar(escrever=not dry_run))
     typer.secho(f"{'seria escrito em' if dry_run else 'instalado em'} {caminho}", fg="green")
+    if "--config" not in texto:
+        # Só acontece no --dry-run: a instalação de verdade recusa. Mas um preview
+        # que mostra um comando sem --config sem dizer nada ensinaria o errado.
+        typer.secho(
+            "aviso: sem lanstream.toml no diretório atual, o comando sai sem --config —\n"
+            "  depois de um reboot ele subiria nos defaults embutidos, sem reclamar.\n"
+            "  Rode de dentro do projeto.",
+            fg="yellow",
+        )
     typer.echo("")
     for linha in texto.replace("\r\n", "\n").rstrip().splitlines():
         typer.echo("  " + linha)

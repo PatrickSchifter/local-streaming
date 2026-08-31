@@ -499,7 +499,9 @@ Aqui o projeto para de ser "dois comandos" e vira algo que aguenta uma sessão r
       (`AcquireNextFrame failed: 887a0026`, seguido de `Conversion failed!`), e a
       recuperação é reiniciar o processo: o filtro `ddagrab` não tem opção de
       reinicializar sozinho.
-- [x] Logs rotativos em arquivo + `--verbose` no console. A primeira linha do
+- [x] Logs rotativos em arquivo + `--verbose` (no **arquivo**, não no console —
+      o console já recebe tudo do ffmpeg direto, e duplicar seria ruído; a flag
+      troca a amostra pelo registro completo do progresso). A primeira linha do
       arquivo é sempre o comando que rodou, e a linha de progresso entra por
       **amostragem** (`[logs] batimento_s`, 30 s) — guardá-la inteira encheria o
       log e a rotação descartaria as linhas de erro, que são as raras e as que

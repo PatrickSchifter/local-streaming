@@ -90,18 +90,24 @@ Duas decisões:
   As linhas que não são progresso entram todas.
 * **Não conseguir escrever o log avisa e segue.** Quem está prestes a jogar não
   quer descobrir que o `send` não sobe porque uma pasta não pôde ser criada.
+* **`--verbose` troca o batimento pelo registro completo** — no arquivo, não no
+  console. O console já recebe tudo do ffmpeg direto; duplicar as mesmas linhas
+  por um segundo caminho seria ruído. A flag serve para quando se está caçando um
+  engasgo de segundos e a amostra de 30 s é grossa demais. Medido: 50 linhas de
+  progresso viram 1 no arquivo sem a flag, e 50 com ela.
 
 A primeira linha do arquivo é sempre o comando que rodou — é a primeira coisa que
 se quer saber ao reler. Verificado com o ffmpeg falso, um arquivo de sessão sai
 assim:
 
 ```
-20:08:13 INFO  === sessão iniciada (watch=True) ===
-20:08:13 INFO  comando: … send --watch
-20:08:13 INFO  [batimento] frame=  100 fps= 60 q=20.0 size=1024kB time=00:00:01.66
-20:08:14 INFO  [srt] Error submitting a packet to the muxer: I/O error
-20:08:14 WARN  [watch] o ffmpeg saiu (1) depois de 0s: o receptor desconectou… | reerguendo em 0s
-20:08:15 INFO  resumo: 3 execuções, 3 reinício(s), 0.0 min no ar
+2026-08-31 20:08:13 INFO  === sessão iniciada (watch=True) ===
+2026-08-31 20:08:13 INFO  comando: …/fake-ffmpeg.py io
+2026-08-31 20:08:13 INFO  [batimento] frame=  100 fps= 60 q=20.0 size=1024kB time=00:00:01.66
+2026-08-31 20:08:14 INFO  [srt] Error submitting a packet to the muxer: I/O error
+2026-08-31 20:08:14 WARNING [watch] o ffmpeg saiu (1) depois de 0s: o receptor desconectou (o listener SRT atende um cliente só). |   reerguendo em 0s (tentativa 1 de 3)
+2026-08-31 20:08:15 INFO  resumo: 3 execuções, 3 reinício(s), 0.0 min no ar
+2026-08-31 20:08:15 INFO  resumo:   - o receptor desconectou (o listener SRT atende um cliente só) (3x)
 ```
 
 Rotação verificada: 2,4 MB escritos com `max_mb = 1` produziram `lanstream.log`
@@ -121,6 +127,22 @@ O `.cmd` chama `python -m lanstream.cli` em vez do `lanstream.exe`, porque o
 console script depende de como o pacote foi instalado e o módulo funciona em
 qualquer caso. E termina com `pause`: se falhar na partida, sem isso a janela
 fecha antes de alguém ler o motivo, e o sintoma vira "não subiu".
+
+### Três coisas que a revisão obrigou a consertar
+
+Todas com o mesmo formato de falha: **quebra depois de um reboot, longe de quem
+poderia entender.**
+
+1. **O `--config` vai explícito, com o caminho resolvido na instalação.** Sem ele
+   o sender dependeria de onde o `cd` parou para achar o toml — e um diretório
+   errado não daria erro: cairia nos defaults embutidos e subiria com host, porta
+   e device errados, calado. Instalar de fora do projeto agora é recusado.
+2. **O arquivo é escrito em `mbcs`, não UTF-8.** O `cmd.exe` lê batch na codepage
+   ANSI do console; num caminho como `C:\Users\João\...` o UTF-8 vira mojibake e
+   o `cd` falha no login. E caminho com `%` é recusado: o batch expande variável
+   mesmo dentro de aspas.
+3. **`--remove --dry-run` apagava mesmo assim.** O `--dry-run` ensina que nada é
+   tocado; apagar sob ele seria a pior traição possível dessa expectativa.
 
 ## 4. O que falta na fase
 

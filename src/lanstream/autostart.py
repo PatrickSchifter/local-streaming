@@ -21,6 +21,7 @@ import sys
 from pathlib import Path
 
 from . import ffmpeg as ff
+from .config import find_config_file
 
 NOME = "lanstream.cmd"
 
@@ -41,7 +42,21 @@ def pasta_startup() -> Path:
     return Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
 
 
-def conteudo(projeto: Path, python: Path, extras: str = "") -> str:
+def _sem_porcento(*caminhos: Path) -> None:
+    """Recusa caminhos com `%`. O batch expande variável mesmo dentro de aspas.
+
+    `C:\\Users\\100%teste` viraria outra coisa na hora do login, e o erro
+    apareceria depois de um reboot — longe de quem poderia entendê-lo.
+    """
+    for caminho in caminhos:
+        if "%" in str(caminho):
+            raise AutostartError(
+                f"o caminho {caminho} tem '%', que o cmd.exe expande como variável.\n"
+                "  Mova o projeto (ou o Python) para um caminho sem '%'."
+            )
+
+
+def conteudo(projeto: Path, python: Path, config: Path | None = None) -> str:
     """O `.cmd` que será escrito. Função pura, para poder ser conferida sem instalar.
 
     Chama `python -m lanstream.cli` em vez do `lanstream.exe`: o console script
@@ -51,13 +66,18 @@ def conteudo(projeto: Path, python: Path, extras: str = "") -> str:
     O `pause` no fim não é enfeite: se o comando falhar na partida, sem ele a
     janela fecha antes de alguém ler o motivo, e o sintoma vira "não subiu".
     """
+    # O `--config` vai explícito, com o caminho resolvido na instalação. Sem ele o
+    # sender dependeria de onde o `cd` parou para achar o toml, e um diretório
+    # errado não daria erro: cairia nos defaults embutidos e subiria com host,
+    # porta e device errados — falha silenciosa depois de um reboot.
+    cfg = f' --config "{config}"' if config else ""
     return (
         "@echo off\r\n"
         "rem Gerado por `lanstream install-autostart`.\r\n"
         "rem Para desativar: apague este arquivo, ou rode\r\n"
         "rem   lanstream install-autostart --remove\r\n"
         f'cd /d "{projeto}"\r\n'
-        f'"{python}" -m lanstream.cli send --watch{extras}\r\n'
+        f'"{python}" -m lanstream.cli send --watch{cfg}\r\n'
         "echo.\r\n"
         "echo O sender encerrou. Feche esta janela ou leia o motivo acima.\r\n"
         "pause\r\n"
@@ -68,7 +88,7 @@ def alvo() -> Path:
     return pasta_startup() / NOME
 
 
-def instalar(extras: str = "", *, escrever: bool = True) -> tuple[Path, str]:
+def instalar(*, escrever: bool = True) -> tuple[Path, str]:
     """Devolve (caminho, conteúdo). Com `escrever=False` não toca no disco."""
     if not ff.IS_WINDOWS and escrever:
         raise AutostartError(
@@ -76,13 +96,29 @@ def instalar(extras: str = "", *, escrever: bool = True) -> tuple[Path, str]:
             "  Para ver o que seria escrito: lanstream install-autostart --dry-run"
         )
     projeto = Path.cwd()
-    texto = conteudo(projeto, Path(sys.executable), extras)
+    python = Path(sys.executable)
+    _sem_porcento(projeto, python)
+
+    config = find_config_file()
+    if config is None and escrever:
+        raise AutostartError(
+            f"não achei um lanstream.toml a partir de {projeto}.\n"
+            "  O auto-start precisa de config explícita: sem ela, o sender subiria\n"
+            "  nos defaults embutidos depois de cada reboot — com host, porta e\n"
+            "  device errados, e sem reclamar. Rode de dentro do projeto."
+        )
+
+    texto = conteudo(projeto, python, config)
     caminho = alvo() if ff.IS_WINDOWS else Path("%APPDATA%") / "…" / "Startup" / NOME
     if escrever:
         try:
             caminho.parent.mkdir(parents=True, exist_ok=True)
-            caminho.write_text(texto, encoding="utf-8", newline="")
-        except OSError as exc:
+            # `mbcs` é a codepage ANSI do Windows: o cmd.exe NÃO lê batch em UTF-8,
+            # e um caminho com acento (`C:\Users\João\...`) sairia em mojibake e
+            # quebraria o `cd` no login — depois do reboot, longe de quem entenderia.
+            codificacao = "mbcs" if ff.IS_WINDOWS else "utf-8"
+            caminho.write_text(texto, encoding=codificacao, newline="")
+        except (OSError, UnicodeEncodeError) as exc:
             raise AutostartError(f"não consegui escrever {caminho}: {exc}") from None
     return caminho, texto
 
@@ -99,3 +135,11 @@ def remover() -> Path | None:
     except OSError as exc:
         raise AutostartError(f"não consegui apagar {caminho}: {exc}") from None
     return caminho
+
+
+def alvo_legivel() -> str:
+    """O caminho do atalho, ou uma descrição dele quando não se está no Windows."""
+    try:
+        return str(alvo())
+    except AutostartError:
+        return "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\" + NOME
