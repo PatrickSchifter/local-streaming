@@ -189,6 +189,28 @@ class AudioConfig:
 
 
 @dataclass
+class LogsConfig:
+    # Vazio = `logs/` ao lado de onde se roda. O diretório já é ignorado pelo git.
+    dir: str = ""
+    max_mb: int = 5
+    manter: int = 5
+    # A linha de progresso do ffmpeg se reescreve várias vezes por segundo; no
+    # arquivo ela entra por amostragem, senão a rotação descartaria as linhas de
+    # erro, que são as raras e as que explicam.
+    batimento_s: int = 30
+
+    def validate(self) -> None:
+        if not 1 <= self.max_mb <= 500:
+            raise ConfigError(f"[logs] max_mb = {self.max_mb} — esperado entre 1 e 500")
+        if not 1 <= self.manter <= 50:
+            raise ConfigError(f"[logs] manter = {self.manter} — esperado entre 1 e 50")
+        if not 1 <= self.batimento_s <= 3600:
+            raise ConfigError(
+                f"[logs] batimento_s = {self.batimento_s} — esperado entre 1 e 3600 s"
+            )
+
+
+@dataclass
 class PathsConfig:
     ffmpeg: str = ""
     ffplay: str = ""
@@ -209,6 +231,7 @@ class Config:
     network: NetworkConfig = field(default_factory=NetworkConfig)
     video: VideoConfig = field(default_factory=VideoConfig)
     audio: AudioConfig = field(default_factory=AudioConfig)
+    logs: LogsConfig = field(default_factory=LogsConfig)
     paths: PathsConfig = field(default_factory=PathsConfig)
 
     # De onde veio. None = só defaults.
@@ -218,6 +241,7 @@ class Config:
         self.network.validate()
         self.video.validate()
         self.audio.validate()
+        self.logs.validate()
         self.paths.validate()
 
 
@@ -225,6 +249,7 @@ SECTIONS: dict[str, type] = {
     "network": NetworkConfig,
     "video": VideoConfig,
     "audio": AudioConfig,
+    "logs": LogsConfig,
     "paths": PathsConfig,
 }
 

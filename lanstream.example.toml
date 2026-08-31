@@ -104,6 +104,23 @@ offset_ms = 0
 # Desligue só para medir a deriva crua.
 resync = true
 
+[logs]
+# Onde cai o log rotativo do `send`. Vazio = `logs/` ao lado de onde se roda,
+# diretório que o git já ignora — o arquivo tem caminho de máquina, IP e nome de
+# device, e nada disso volta para o repositório.
+dir = ""
+
+# Rotação por TAMANHO, não por data: o que importa é caber, e uma sessão longa
+# gera muito mais linha que um dia parado.
+max_mb = 5
+manter = 5
+
+# A linha de progresso do ffmpeg se reescreve várias vezes por segundo. No
+# arquivo ela entra por amostragem, virando um batimento de fps/bitrate ao longo
+# do tempo; guardá-la inteira encheria o log e a rotação descartaria justamente
+# as linhas de erro, que são as raras e as que explicam.
+batimento_s = 30
+
 [paths]
 # Deixe vazio para procurar no PATH. Preencha só se houver mais de um ffmpeg
 # instalado e você quiser fixar um — no Windows a 9.0.1 quebra o NVENC com o

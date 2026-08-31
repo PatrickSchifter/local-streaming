@@ -75,11 +75,60 @@ Com um ffmpeg falso que escreve no stderr o que o de verdade escreveria e morre:
 teste exercita a máquina de decisão, que é onde os erros de lógica moram; a prova
 de que o par se reergue sozinho é a do §F5 no Windows, com o OBS do outro lado.
 
-## 2. O que falta na fase
+## 2. O log: para quem não estava olhando
 
-- [ ] Logs rotativos em arquivo + `--verbose` no console.
-- [ ] Auto-start opcional no Windows (`lanstream install-autostart`).
-- [ ] (Opcional) mDNS — só vale se o IP do Windows mudar de fato; hoje uma
-      reserva de DHCP no roteador resolve com zero código.
+O console serve para quem está olhando. Numa sessão de três horas ninguém
+acompanha o terminal, e quando algo some do ar a pergunta é sempre sobre o
+passado — daí `logs/lanstream.log`, rotativo.
+
+Duas decisões:
+
+* **A linha de progresso entra por amostragem** (30 s por padrão). Ela se
+  reescreve várias vezes por segundo; guardá-la inteira encheria o arquivo e a
+  rotação descartaria justamente as linhas de **erro**, que são raras e são as
+  que explicam. Amostrada, ela vira um batimento de fps/bitrate ao longo do tempo.
+  As linhas que não são progresso entram todas.
+* **Não conseguir escrever o log avisa e segue.** Quem está prestes a jogar não
+  quer descobrir que o `send` não sobe porque uma pasta não pôde ser criada.
+
+A primeira linha do arquivo é sempre o comando que rodou — é a primeira coisa que
+se quer saber ao reler. Verificado com o ffmpeg falso, um arquivo de sessão sai
+assim:
+
+```
+20:08:13 INFO  === sessão iniciada (watch=True) ===
+20:08:13 INFO  comando: … send --watch
+20:08:13 INFO  [batimento] frame=  100 fps= 60 q=20.0 size=1024kB time=00:00:01.66
+20:08:14 INFO  [srt] Error submitting a packet to the muxer: I/O error
+20:08:14 WARN  [watch] o ffmpeg saiu (1) depois de 0s: o receptor desconectou… | reerguendo em 0s
+20:08:15 INFO  resumo: 3 execuções, 3 reinício(s), 0.0 min no ar
+```
+
+Rotação verificada: 2,4 MB escritos com `max_mb = 1` produziram `lanstream.log`
++ `.1` + `.2`.
+
+## 3. Auto-start: atalho na Inicializar, não tarefa agendada
+
+`lanstream install-autostart` escreve um `.cmd` na pasta Inicializar do usuário
+(`--dry-run` mostra o conteúdo, `--remove` desfaz). O Task Scheduler faria isso
+"mais direito" e seria **pior aqui**: tarefa agendada roda sem console, e sem
+console o `CTRL_C_EVENT` não tem onde chegar — que é exatamente o mecanismo que a
+Fase 2 mediu para o ffmpeg encerrar limpo, escrevendo o trailer e soltando a
+porta (`fase2.md` §5). Uma janela de console de verdade dá para ver e dá para
+encerrar do jeito já testado.
+
+O `.cmd` chama `python -m lanstream.cli` em vez do `lanstream.exe`, porque o
+console script depende de como o pacote foi instalado e o módulo funciona em
+qualquer caso. E termina com `pause`: se falhar na partida, sem isso a janela
+fecha antes de alguém ler o motivo, e o sintoma vira "não subiu".
+
+## 4. O que falta na fase
+
 - [ ] **A prova real:** derrubar a rede por 30 s e o stream voltar sozinho, sem
-      tocar em nenhuma das duas máquinas.
+      tocar em nenhuma das duas máquinas. É o critério de saída, e precisa do
+      Windows.
+- [ ] Rodar o `install-autostart` no Windows e conferir que ele sobe no login.
+
+⛔ **O mDNS não será construído.** O próprio item do PLANO já dizia que só valeria
+se o IP do Windows mudasse de fato — e ele não mudou em nenhuma rodada. Uma
+reserva de DHCP no roteador resolve com zero código e zero peça nova para quebrar.

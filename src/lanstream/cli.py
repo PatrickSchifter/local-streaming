@@ -16,10 +16,13 @@ from typing import Annotated
 import typer
 
 from . import __version__
+from . import autostart as autostart_mod
 from . import doctor as doctor_mod
+from . import logs as logs_mod
 from . import receiver as receiver_mod
 from . import sender as sender_mod
 from . import supervisor as supervisor_mod
+from .autostart import AutostartError
 from .config import Config, ConfigError, find_config_file
 from .config import load as load_config
 from .encoders import EncoderError
@@ -56,7 +59,14 @@ def _guard(fn, *args):
     """
     try:
         return fn(*args)
-    except (ConfigError, FFmpegError, EncoderError, SenderError, ReceiverError) as exc:
+    except (
+        ConfigError,
+        FFmpegError,
+        EncoderError,
+        SenderError,
+        ReceiverError,
+        AutostartError,
+    ) as exc:
         typer.secho(f"erro: {exc}", fg="red", err=True)
         raise typer.Exit(2) from None
 
@@ -108,6 +118,9 @@ def send(
         bool,
         typer.Option("--watch", help="Fica no ar: reergue o ffmpeg sozinho quando ele cair."),
     ] = False,
+    verbose: Annotated[
+        bool, typer.Option("--verbose", "-v", help="Mostra no console o que só iria para o log.")
+    ] = False,
 ) -> None:
     """Captura a tela do Windows e publica em SRT. Ctrl+C encerra."""
     cfg = _load(config)
@@ -144,6 +157,33 @@ def send(
         fg="green",
     )
 
+    # O log é aberto aqui, depois de o comando estar montado e antes de subir o
+    # ffmpeg: assim a primeira linha do arquivo é sempre o comando que rodou, que
+    # é a primeira coisa que se quer saber ao reler.
+    destino = logs_mod.caminho_padrao(cfg.logs.dir)
+    diario = logs_mod.configurar(
+        destino, max_mb=cfg.logs.max_mb, manter=cfg.logs.manter, verbose=verbose
+    )
+    if diario is None:
+        typer.secho(f"aviso: não consegui escrever em {destino} — seguindo sem log.", fg="yellow")
+    else:
+        typer.secho(f"  log em {destino}", fg="cyan")
+        diario.info("=== sessão iniciada (watch=%s) ===", watch)
+        diario.info("comando: %s", plan.shell_line)
+        for linha in sender_mod.summary(cfg, plan):
+            diario.info("%s", linha)
+    batimento = logs_mod.Batimento(cfg.logs.batimento_s)
+
+    def _registrar(linha: str, progresso: bool) -> None:
+        """O que vai para o console vai também para o arquivo — o progresso, por amostragem."""
+        _echo_ffmpeg(linha, progresso)
+        if diario is None:
+            return
+        if not progresso:
+            diario.info("%s", linha)
+        elif batimento.passa():
+            diario.info("[batimento] %s", linha)
+
     def _anunciar(mensagem: str) -> None:
         # Mensagem do supervisor, não do ffmpeg: cor diferente e sempre em linha
         # nova, para não se confundir com a linha de progresso que se reescreve.
@@ -152,15 +192,21 @@ def send(
                 typer.echo("")
                 _echo_ffmpeg.pending = False
         typer.secho("[watch] " + mensagem, fg="yellow")
+        if diario is not None:
+            diario.warning("[watch] %s", mensagem.replace("\n", " | "))
 
     if watch:
-        sessao = _guard(supervisor_mod.supervisionar, cfg, plan, _echo_ffmpeg, _anunciar)
+        sessao = _guard(supervisor_mod.supervisionar, cfg, plan, _registrar, _anunciar)
         typer.echo("")
         for linha in sessao.resumo():
             typer.secho("  " + linha, fg="cyan")
+            if diario is not None:
+                diario.info("resumo: %s", linha)
         raise typer.Exit(0)
 
-    resultado = _guard(sender_mod.run, plan, _echo_ffmpeg)
+    resultado = _guard(sender_mod.run, plan, _registrar)
+    if diario is not None:
+        diario.info("saiu com %s: %s", resultado.code, resultado.motivo)
     if resultado.motivo and not resultado.interrompido:
         typer.secho(f"  o ffmpeg saiu: {resultado.motivo}", fg="yellow")
         if resultado.reiniciar:
@@ -230,6 +276,33 @@ def _echo_ffmpeg(line: str, is_progress: bool) -> None:
 
 
 _echo_ffmpeg.pending = False
+
+
+@app.command("install-autostart")
+def install_autostart(
+    remove: Annotated[
+        bool, typer.Option("--remove", help="Apaga o atalho em vez de criá-lo.")
+    ] = False,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Mostra o que seria escrito, sem escrever.")
+    ] = False,
+) -> None:
+    """Faz o `send --watch` subir sozinho no login do Windows."""
+    if remove:
+        caminho = _guard(autostart_mod.remover)
+        typer.secho(f"removido: {caminho}" if caminho else "não havia nada instalado.", fg="green")
+        return
+
+    caminho, texto = _guard(lambda: autostart_mod.instalar(escrever=not dry_run))
+    typer.secho(f"{'seria escrito em' if dry_run else 'instalado em'} {caminho}", fg="green")
+    typer.echo("")
+    for linha in texto.replace("\r\n", "\n").rstrip().splitlines():
+        typer.echo("  " + linha)
+    typer.echo("")
+    if not dry_run:
+        typer.secho(
+            "Vale no próximo login. Para desfazer: lanstream install-autostart --remove", fg="cyan"
+        )
 
 
 @config_app.command("show")

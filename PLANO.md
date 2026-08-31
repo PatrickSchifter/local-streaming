@@ -499,7 +499,12 @@ Aqui o projeto para de ser "dois comandos" e vira algo que aguenta uma sessão r
       (`AcquireNextFrame failed: 887a0026`, seguido de `Conversion failed!`), e a
       recuperação é reiniciar o processo: o filtro `ddagrab` não tem opção de
       reinicializar sozinho.
-- [ ] Logs rotativos em arquivo + `--verbose` no console.
+- [x] Logs rotativos em arquivo + `--verbose` no console. A primeira linha do
+      arquivo é sempre o comando que rodou, e a linha de progresso entra por
+      **amostragem** (`[logs] batimento_s`, 30 s) — guardá-la inteira encheria o
+      log e a rotação descartaria as linhas de erro, que são as raras e as que
+      explicam. Não conseguir escrever o log **avisa e segue**: quem vai jogar não
+      quer descobrir que o `send` não sobe porque uma pasta não pôde ser criada.
 - [x] `lanstream send --watch`: fica no ar esperando o OBS conectar/reconectar,
       sem precisar reiniciar nada do lado do Windows.
       **A Fase 2 mostrou que metade disso já existe de graça:** o Media Source do
@@ -509,11 +514,16 @@ Aqui o projeto para de ser "dois comandos" e vira algo que aguenta uma sessão r
       humana nenhuma**, e não só sem reiniciar o sender.
       Falta a prova no Windows real; a lógica está verificada com um ffmpeg falso
       (`docs/fase5.md` §1).
-- [ ] Auto-start opcional no Windows: gerar a entrada do Task Scheduler /
-      atalho na pasta Startup via `lanstream install-autostart`.
-- [ ] (Opcional) Anúncio mDNS/Bonjour do sender, pra não precisar fixar IP.
-      Só vale a pena se o IP do Windows mudar de fato — senão, DHCP reservation
-      no roteador resolve com zero código.
+- [x] Auto-start opcional no Windows via `lanstream install-autostart`
+      (`--dry-run` mostra o que seria escrito, `--remove` desfaz).
+      **Atalho na pasta Inicializar, e não Task Scheduler, por um motivo medido:**
+      tarefa agendada roda sem console, e sem console o `CTRL_C_EVENT` não tem
+      onde chegar — que é exatamente o mecanismo que a Fase 2 mediu para o ffmpeg
+      encerrar limpo, escrevendo o trailer e soltando a porta (`fase2.md` §5).
+- [x] ~~(Opcional) Anúncio mDNS/Bonjour do sender~~ — **não construído, de
+      propósito.** O próprio item já dizia que só valeria se o IP do Windows
+      mudasse de fato, e ele não mudou em nenhuma das rodadas; uma reserva de
+      DHCP no roteador resolve com zero código e zero peça nova para quebrar.
 
 **Saída:** desligar o Wi-Fi/cabo por 30s e religar — o stream volta sozinho, sem
 intervenção nas duas máquinas.
