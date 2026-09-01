@@ -542,8 +542,11 @@ intervenção nas duas máquinas.
 > (`docs/fase5.md` §5 e §6). **Foi o log em arquivo desta fase que tornou o
 > defeito visível**; no console ele se perdia entre as linhas de progresso.
 >
-> Aberto: o `install-autostart` no login, e provar o teto de fila no caso de
-> espera longa com a máquina só para o teste.
+> O `install-autostart` também foi verificado no login (42 s depois dele — o
+> Windows não dispara a pasta Inicializar na hora).
+>
+> Aberto: provar o teto de fila no caso de espera longa, com a máquina só para o
+> teste.
 
 ---
 

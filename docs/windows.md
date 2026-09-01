@@ -25,19 +25,22 @@ sender no ar, sobrou ffmpeg órfão: `Get-Process ffmpeg | Stop-Process`.
 
 ## 2. O que está aberto aqui
 
-### 2.1 O `install-autostart` sobe no login? ⏱️ 2 min + um logoff
+### 2.1 O `install-autostart` ✅ **verificado em 01/09**
 
-O comando está pronto e o `--dry-run` foi conferido nesta máquina. Falta a única
-parte que prova alguma coisa: sair e entrar de novo.
+Instalado e conferido no login desta máquina: console de verdade, `send --watch`
+rodando, argv com o `--config` absoluto.
 
 ```powershell
 lanstream install-autostart --dry-run   # confira o caminho do toml na linha do send
 lanstream install-autostart
-# logoff / login
+lanstream install-autostart --remove    # desfaz
 ```
 
-Depois do login tem que existir uma janela de console com o `send --watch`
-rodando. Para desfazer: `lanstream install-autostart --remove`.
+> ⏱️ **Espere ~40 s depois do login antes de concluir que falhou.** Medido aqui:
+> login às 10:09:58, sender no ar às 10:10:42. O Windows não dispara os itens da
+> pasta Inicializar no instante do login. E se a janela for fechada antes de o
+> sender inicializar, **ela não deixa linha no log** — a sessão só é registrada
+> depois que o logging sobe, então não adianta procurar rastro ali.
 
 O `.cmd` termina com `pause` de propósito: se falhar na partida, sem isso a
 janela fecha antes de alguém ler o motivo, e o sintoma vira "não subiu"

@@ -128,6 +128,28 @@ console script depende de como o pacote foi instalado e o módulo funciona em
 qualquer caso. E termina com `pause`: se falhar na partida, sem isso a janela
 fecha antes de alguém ler o motivo, e o sintoma vira "não subiu".
 
+### Verificado no login, em 01/09
+
+```
+10:09:58   login (explorer.exe sobe)
+10:10:40   o python do supervisor sobe        <- 42 s depois do login
+10:10:42   ffmpeg no ar, porta 9000 ocupada
+```
+
+Console de verdade, `send --watch` rodando, argv correto — com o `--config`
+absoluto e o `-rtbufsize` do §6.
+
+> ⏱️ **Os 42 s não são defeito, e enganam.** O Windows não dispara os itens da
+> pasta Inicializar no instante do login. Conferir dez segundos depois e ver a
+> porta livre leva à conclusão errada de que o autostart falhou — foi o que
+> quase se concluiu aqui, e o que salvou foi olhar o horário do `explorer.exe`
+> contra o do processo.
+>
+> Houve um login anterior, às 10:06:46, cuja janela foi fechada antes de o
+> sender inicializar. Ele **não deixou linha no log**: a sessão só é registrada
+> depois que o logging sobe, então uma janela fechada no primeiro instante não
+> deixa rastro nenhum. Quem depurar isso pelo log não vai achar o que procura.
+
 ### Três coisas que a revisão obrigou a consertar
 
 Todas com o mesmo formato de falha: **quebra depois de um reboot, longe de quem
@@ -314,7 +336,7 @@ ou falha rápido, e o supervisor já sabe reerguer.
 ## 7. O que falta na fase
 
 - [x] **A prova real:** feita em 01/09 — §4.
-- [ ] Rodar o `install-autostart` no Windows e conferir que ele sobe no login.
+- [x] **O `install-autostart` sobe no login** — verificado em 01/09, §3.
 - [x] **Limitar o `rtbufsize` do dshow** — feito em 01/09, §6. O áudio voltou a
       chegar limpo e em sincronia.
 - [ ] Provar o teto no caso de **espera longa**, com a máquina só para o teste
