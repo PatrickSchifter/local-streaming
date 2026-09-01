@@ -23,7 +23,15 @@ lanstream doctor
 O `doctor` tem que fechar sem FALHA. Se ele acusar `porta 9000/UDP ocupada` sem
 sender no ar, sobrou ffmpeg órfão: `Get-Process ffmpeg | Stop-Process`.
 
-## 2. O que está aberto aqui
+## 2. Os dois defeitos que esta máquina fechou em 01/09
+
+Os dois estão resolvidos. Ficam aqui porque os sintomas são fáceis de
+reencontrar e enganam quem não conhece a história — e porque um deles deixou uma
+ponta solta (§2.2).
+
+**O único item ainda aberto da Fase 5** é provar o teto de fila do §2.2 no caso
+de **espera longa**, e ele precisa da máquina só para o teste, sem sender de
+verdade rodando junto (`fase5.md` §6).
 
 ### 2.1 O `install-autostart` ✅ **verificado em 01/09**
 
