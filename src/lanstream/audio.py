@@ -21,6 +21,11 @@ Duas coisas custam caro se ficarem implícitas, então estão escritas aqui:
   lida mais devagar enche a fila e o ffmpeg avisa
   ("Thread message queue blocking; consider raising the thread_queue_size option")
   — e, pior que o aviso, descarta pacote. É barato e é o padrão para captura dupla.
+* **`-rtbufsize`.** É o teto da fila de captura, e o default do ffmpeg guarda
+  15,8 s de áudio. Isso não é margem de segurança: como o listener SRT trava o
+  ffmpeg até o OBS conectar, tudo o que o device capturar na espera fica na fila
+  e **nunca drena**, virando atraso fixo do áudio (docs/fase5.md §5). O teto é
+  explícito por isso, e é medido em milissegundos de áudio, não em bytes.
 """
 
 from __future__ import annotations
@@ -33,6 +38,13 @@ from .config import AudioConfig, parse_bitrate
 # Pacotes de fila por entrada. 1024 é o valor que a documentação do ffmpeg sugere
 # quando o aviso aparece; a fila só ocupa memória se for usada.
 THREAD_QUEUE = 1024
+
+# Bytes por segundo do áudio CRU que sai do dshow — antes do AAC. É o formato que
+# o `encode_args` fixa e o que o device entrega nesta máquina (medido:
+# `pcm_s16le, 48000 Hz, stereo, s16`). Serve só para converter o `rtbuffer_ms` em
+# bytes, que é a unidade que o `-rtbufsize` aceita. Se um device entregar outro
+# formato, o teto vira aproximado — e um teto aproximado ainda é um teto.
+RAW_BYTES_POR_S = 48_000 * 2 * 2  # 48 kHz, estéreo, 2 bytes por amostra
 
 # O comando que lista os devices. Sai com código 1 e
 # "dummy: Immediate exit requested" — isso é sucesso, não falha.
@@ -178,11 +190,12 @@ def find(devices: list[Device], name: str) -> Device | None:
 def input_args(cfg: AudioConfig) -> list[str]:
     """O bloco de entrada do áudio: tudo isto vem ANTES do `-i` a que se aplica.
 
-    Ordem importa duas vezes aqui. `-f dshow` primeiro porque `-audio_buffer_size`
+    Ordem importa três vezes aqui. `-f dshow` primeiro porque `-audio_buffer_size`
     é opção privada do demuxer dshow — sem o formato declarado, o ffmpeg não sabe
     de quem é a opção. E o `-itsoffset` precisa estar neste bloco, não no de saída:
     como opção de entrada ele desloca os timestamps *deste* input, que é o que
-    corrige o áudio contra o vídeo.
+    corrige o áudio contra o vídeo. E o `-rtbufsize` também é opção de entrada:
+    no bloco de saída ele seria aceito calado e não limitaria fila nenhuma.
     """
     args = [
         "-f",
@@ -191,6 +204,11 @@ def input_args(cfg: AudioConfig) -> list[str]:
         str(cfg.buffer_ms),
         "-thread_queue_size",
         str(THREAD_QUEUE),
+        # Teto da fila de captura. Sem ele o ffmpeg guarda 15,8 s de áudio, e todo
+        # segundo que o listener SRT passa esperando o caller vira atraso que não
+        # drena mais (docs/fase5.md §5).
+        "-rtbufsize",
+        str(round(cfg.rtbuffer_ms / 1000 * RAW_BYTES_POR_S)),
     ]
     if cfg.offset_ms:
         # Positivo ATRASA o áudio: o ffmpeg soma o offset aos timestamps da

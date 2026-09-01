@@ -142,6 +142,26 @@ class AudioConfig:
     # do vídeo com o tempo, o problema é de relógio e quem resolve é o `resync`.
     offset_ms: int = 0
 
+    # Teto da fila de captura do dshow (`-rtbufsize`), em milissegundos de áudio.
+    #
+    # Existe por causa de um defeito medido em 01/09 (docs/fase5.md §5): o device
+    # dshow abre quando o processo sobe, mas o listener SRT trava o ffmpeg até o
+    # OBS conectar. O áudio capturado nessa espera vira fila, e a fila NUNCA
+    # drena — depois da conexão o consumo é igual à produção, tempo real. O
+    # backlog formado na espera vira atraso fixo do áudio pelo resto da execução.
+    #
+    # Com o default do ffmpeg (3.041.280 bytes = 15,8 s de áudio a 48 kHz
+    # estéreo s16) os dois regimes medidos foram:
+    #     espera <  15,8 s  ->  áudio limpo, atrasado pelo tempo da espera
+    #     espera >  15,8 s  ->  satura: picote contínuo + ~15,8 s de atraso
+    # Uma espera de 36 s deu 5325 quadros descartados em 16 minutos, com o vídeo
+    # em 60 fps cravados e `speed=1x` o tempo todo — nenhum indicador acusa.
+    #
+    # O teto resolve porque descartar áudio ENQUANTO NINGUÉM ASSISTE não custa
+    # nada: o que importa é que a conexão comece com áudio fresco. 500 ms é folga
+    # confortável sobre o `buffer_ms` do device sem virar atraso audível.
+    rtbuffer_ms: int = 500
+
     # Reamostra o áudio para mantê-lo colado na linha de tempo (`aresample=async`).
     # Ligado por default por causa do que a rodada de 31/08 mediu: o OBS acusou o
     # áudio 2204 ms e 2490 ms atrasado, duas vezes, em conexões de ~45 min, e
@@ -180,6 +200,19 @@ class AudioConfig:
             raise ConfigError(
                 f"[audio] buffer_ms = {self.buffer_ms} — esperado entre 10 e 1000 ms.\n"
                 "  Abaixo de 10 o device picota; acima de 1000 o áudio atrasa mais que o SRT."
+            )
+        if not 50 <= self.rtbuffer_ms <= 20000:
+            raise ConfigError(
+                f"[audio] rtbuffer_ms = {self.rtbuffer_ms} — esperado entre 50 e 20000 ms.\n"
+                "  Abaixo de 50 a fila descarta em operação normal, não só na espera;\n"
+                "  acima de 20000 já passa do default do ffmpeg e não limita nada."
+            )
+        if self.rtbuffer_ms < self.buffer_ms:
+            raise ConfigError(
+                f"[audio] rtbuffer_ms = {self.rtbuffer_ms} é menor que "
+                f"buffer_ms = {self.buffer_ms}.\n"
+                "  A fila não pode ser menor que um bloco do device: ela descartaria\n"
+                "  cada bloco assim que ele chegasse."
             )
         if not -2000 <= self.offset_ms <= 2000:
             raise ConfigError(

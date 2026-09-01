@@ -530,6 +530,21 @@ Aqui o projeto para de ser "dois comandos" e vira algo que aguenta uma sessão r
 **Saída:** desligar o Wi-Fi/cabo por 30s e religar — o stream volta sozinho, sem
 intervenção nas duas máquinas.
 
+> **Onde está:** ✅ **BATIDA em 01/09.** Adaptador derrubado por 30 s com o OBS
+> conectado: o ffmpeg morreu em 5 s, o supervisor classificou e reergueu **com a
+> rede ainda fora**, e o stream voltou **43 s depois da queda / 12 s depois de o
+> IP voltar**, sem tocar em nenhuma das duas máquinas (`docs/fase5.md` §4).
+>
+> A sessão de teste também revelou e consertou um defeito que nenhum indicador
+> acusava: o áudio chegava atrasado — e, acima de 15,8 s de espera pelo OBS,
+> picotado — porque o device dshow captura enquanto o listener SRT espera o
+> caller, e essa fila nunca drena. Entrou o `[audio] rtbuffer_ms`
+> (`docs/fase5.md` §5 e §6). **Foi o log em arquivo desta fase que tornou o
+> defeito visível**; no console ele se perdia entre as linhas de progresso.
+>
+> Aberto: o `install-autostart` no login, e provar o teto de fila no caso de
+> espera longa com a máquina só para o teste.
+
 ---
 
 ### Fase 6 — Automação do OBS (`obs-websocket`)

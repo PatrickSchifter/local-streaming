@@ -101,6 +101,17 @@ offset_ms = 0
 # porque em 31/08 o OBS acusou o áudio 2204 ms e 2490 ms atrasado, duas vezes, em
 # conexões de ~45 min, e reiniciou a fonte sozinho (docs/fase3.md §12). Custo:
 # esticar ou comprimir o áudio em frações de ms por segundo, inaudível.
+# Teto da fila de captura do dshow (`-rtbufsize`), em milissegundos de áudio.
+#
+# O default do ffmpeg guarda 15,8 s de áudio, e isso não é margem: o listener SRT
+# trava o ffmpeg até o OBS conectar, e tudo o que o device capturar nessa espera
+# vira fila que NUNCA drena — o consumo depois da conexão é tempo real, igual à
+# produção. O backlog da espera vira atraso fixo do áudio (docs/fase5.md §5).
+#
+# Medido em 01/09: espera de 5 s -> áudio limpo, ~4 s atrasado; espera de 36 s ->
+# satura e descarta 5325 quadros em 16 min, com o vídeo em 60 fps o tempo todo.
+rtbuffer_ms = 500
+
 # Desligue só para medir a deriva crua.
 resync = true
 

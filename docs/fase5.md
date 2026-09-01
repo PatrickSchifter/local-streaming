@@ -144,12 +144,184 @@ poderia entender.**
 3. **`--remove --dry-run` apagava mesmo assim.** O `--dry-run` ensina que nada é
    tocado; apagar sob ele seria a pior traição possível dessa expectativa.
 
-## 4. O que falta na fase
+## 4. A prova real: a rede caiu 30 s e o par voltou sozinho
 
-- [ ] **A prova real:** derrubar a rede por 30 s e o stream voltar sozinho, sem
-      tocar em nenhuma das duas máquinas. É o critério de saída, e precisa do
-      Windows.
+Rodada de 01/09, com o OBS do Mac conectado e `send --watch` no ar. A queda foi
+provocada por script destacado (`Disable-NetAdapter` no adaptador `Ethernet`,
+30 s, `Enable-NetAdapter`), com tarefa agendada de segurança para religar caso o
+script morresse no meio — a máquina precisa se restaurar sem depender de quem a
+derrubou.
+
+```
+09:03:43.789   adaptador Ethernet OFF
+09:03:43.579   SRT começa a acusar CChannel::sendto failed
+09:03:48       ffmpeg morre: I/O error                        (5 s depois da queda)
+09:03:48       [watch] classifica e decide: reerguendo em 1s  (tentativa 0 de 20)
+09:03:50       ffmpeg novo de pé, escutando na 9000 — com a rede ainda FORA
+09:04:14       adaptador ON
+09:04:25       IP de volta (192.168.0.12)
+09:04:26       Output #0 → o OBS reconectou sozinho
+09:04:56       60 fps, speed=1x, estável
+```
+
+**Stream de volta 43 s depois da queda, 12 s depois de o IP voltar, com zero
+intervenção nas duas máquinas.** É o critério de saída da fase.
+
+Duas coisas que o teste mostrou e que não estavam previstas:
+
+**O supervisor reergue durante o apagão, e isso é o certo.** O ffmpeg novo subiu
+às 09:03:50 com a rede ainda fora e ficou segurando a porta esperando o caller.
+Não era óbvio que o bind em `0.0.0.0:9000` funcionaria com o adaptador
+desabilitado — funciona, e é o que faz o par voltar em 12 s em vez de esperar
+mais um ciclo de backoff depois que a rede volta.
+
+**A classificação acerta a ação e erra a frase.** O `[watch]` disse *"o receptor
+desconectou (o listener SRT atende um cliente só)"*, e o receptor não tinha
+desconectado: quem caiu foi a placa de rede desta máquina. O ffmpeg entrega o
+mesmo `I/O error` nos dois casos, então o stderr sozinho não distingue — quem ler
+o log depois de uma queda de rede vai procurar do lado errado. Distinguir é
+barato e ainda não foi feito: se o próprio host perdeu o IP, a frase é outra.
+
+> Antes da queda provocada, a mesma sessão já tinha reerguido duas vezes por
+> desconexão real do OBS (08:52:30 e 08:56:51), as duas em ~25 s. A lógica da §1,
+> verificada com ffmpeg falso, se comporta igual com o ffmpeg de verdade.
+
+## 5. O achado que o log de arquivo revelou: o áudio perde quadro na captura
+
+O `[logs]` da §2 existe para responder perguntas sobre o passado. Na primeira
+sessão real ele respondeu uma que ninguém tinha feito.
+
+Durante a sessão inteira, o ffmpeg repetiu:
+
+```
+[in#0/dshow] real-time buffer [virtual-audio-capturer] [audio input]
+             too full or near too full (75% of size: 3041280)! frame dropped!
+```
+
+1105 linhas em ~15 minutos. **O vídeo esteve perfeito o tempo todo** — 60 fps
+cravados, `speed=1x`, nenhum quadro perdido. O áudio, não: chegou **picotado e
+dessincronizado** no OBS do Mac. O drop é só do áudio, e não aparece em nenhum
+indicador de saúde do stream — o vídeo perfeito e o `speed=1x` dizem que está
+tudo bem, e não está.
+
+> A primeira leitura desta sessão foi "soa contínuo", e ela estava errada — a
+> conferência de ouvido foi refeita e o picote é audível. Registro o erro porque
+> ele quase virou doc: por 20 minutos este documento afirmou que o drop não
+> machucava, apoiado numa impressão, contra dois números que já diziam o
+> contrário (o buffer preso em 75–92% e o déficit de bytes abaixo).
+
+**A causa, confirmada por intervenção.** O device dshow abre quando o processo
+sobe, mas o listener SRT trava o ffmpeg até o caller chegar. Nesse intervalo o
+áudio já está capturando e ninguém consome: a fila enche, e **ela nunca drena**,
+porque depois da conexão o consumo é exatamente igual à produção — tempo real.
+O backlog formado na espera fica lá até o fim da execução.
+
+Não é correlação. Na mesma sessão, mesmo comando, mesma máquina, mudando só a
+espera (matei o ffmpeg para o supervisor reerguer com o OBS já reconectando):
+
+| execução | espera pelo caller | drops de áudio | o que se ouviu no Mac |
+|---|---|---|---|
+| 08:49:30 | 2 min 45 s | satura em 100% | — |
+| 08:52:32 | 23 s | pina em 75% | picotado |
+| 09:03:50 | 36 s | pina em 92%, **5325** em 16 min | picotado e dessincronizado |
+| **09:20:31** | **5 s** | **0** | **limpo, ~4 s atrasado** |
+
+### A aritmética que fecha os dois sintomas
+
+O buffer do dshow é o `rtbufsize` default, 3.041.280 bytes. O áudio ocupa
+192.000 B/s (48 kHz × 2 canais × 2 bytes). Portanto o buffer cheio são **15,8 s
+de áudio**, e o comportamento se parte em dois regimes:
+
+```
+espera <  15,8 s  ->  não satura: sem drop, e o áudio sai ATRASADO pela espera
+espera >  15,8 s  ->  satura: drop contínuo para sempre, atraso preso em ~15,8 s
+```
+
+As quatro execuções acima caem exatamente nos dois lados, e o caso de 5 s prevê
+o atraso relatado: **5 s de espera, ~4 s de atraso ouvido.** O `frame dropped`
+repetido não era a doença — era o `aresample=async=1` descartando quadro para
+tentar alcançar um áudio que estava 12 s atrás.
+
+> **Um sintoma que nenhum indicador de saúde acusa.** Durante os 16 minutos com
+> 5325 drops, o vídeo esteve em 60 fps cravados e `speed=1x`. O `doctor` passa, o
+> stream "está bem", e o áudio chega quebrado.
+
+### Isto explica a contradição que trancou o F3.4
+
+O `fase3.md` §13 registrou que o offset de áudio **muda a cada execução**, por um
+fator de vinte e com o sinal trocado, e por isso nenhum número serve no
+`offset_ms`. A hipótese de lá era o tempo variável de abertura do device dshow.
+
+Há uma explicação melhor, e ela é a mesma daqui: **o que varia a cada execução é
+quanto o sender esperou o OBS conectar**, e essa espera vira atraso do áudio.
+Cada rodada mediu a sua própria espera.
+
+E o §10 do mesmo documento ganha sentido retroativo. Lá, a gravação **local** de
+60 s — argv idêntico ao do `send`, só trocando o SRT por arquivo — deu mediana
+**−0,3 ms**, sincronismo perfeito, enquanto toda rodada por SRT dava dezenas ou
+centenas de ms. A diferença entre as duas: **a gravação em arquivo não espera
+caller nenhum.** Saída de arquivo abre na hora, backlog zero.
+
+> Isto é hipótese forte, não causa medida: as magnitudes do §13 são de dezenas a
+> centenas de ms, e esperas de segundos previriam mais. Pode haver um segundo
+> termo. O que já não se sustenta é tratar o `offset_ms` como constante de config.
+
+## 6. O conserto: um teto na fila de captura
+
+`[audio] rtbuffer_ms`, default **500 ms**, vira `-rtbufsize` em bytes no bloco de
+entrada do dshow (500 ms × 192.000 B/s = 96.000). A conversão de ms para bytes
+mora no `audio.py` porque a unidade do ffmpeg é byte e a unidade em que se pensa
+é tempo — o `RAW_BYTES_POR_S` documenta a suposição de formato do device.
+
+**Por que um teto resolve.** Descartar áudio *enquanto ninguém assiste* não custa
+nada: o que importa é que a conexão comece com áudio fresco. O teto não impede a
+fila de encher na espera, ele impede que ela guarde 15,8 s de passado.
+
+Duas validações entraram junto, as duas por falha possível e silenciosa:
+
+* faixa de 50 a 20000 ms — abaixo de 50 a fila descartaria em operação normal, e
+  não só na espera; acima de 20000 já passa do default do ffmpeg e não limita nada;
+* recusa `rtbuffer_ms < buffer_ms` — uma fila menor que um bloco do device
+  descartaria cada bloco assim que ele chegasse.
+
+### O que foi verificado, e o que não foi
+
+**Verificado:** o argv que sobe traz `-rtbufsize 96000`; o `example.toml` continua
+batendo com os defaults do código (`config show -c lanstream.example.toml`); a
+sessão real reiniciada às 09:30:54 rodou com **0 drops**, 60 fps e `speed=1x`; e
+**o áudio voltou a chegar limpo e em sincronia no OBS do Mac** — conferido de
+ouvido, que é a mesma ponta que tinha diagnosticado o problema.
+
+**Não verificado:** o caso de espera longa, que é justamente o que o teto ataca.
+A execução que confirmou o conserto pegou o OBS em menos de 1 s de espera, e com
+espera zero o código antigo também ficaria limpo.
+
+> 🔬 **Uma tentativa de testar isso não valeu, e fica registrada para não ser
+> repetida.** Subi um sender de teste na porta 9001 com 60 s de espera
+> deliberada. O teto funcionou na espera (fila em 100% e parada lá, 11 descartes
+> em 60 s), mas apareceram 113 linhas de drop depois do caller conectar — o que,
+> se fosse limpo, apontaria para o teto trocar atraso por picote. **Não era
+> limpo:** o teste rodou junto com o sender de verdade, dois ffmpeg abrindo o
+> mesmo `virtual-audio-capturer` e dois nvenc na mesma GPU. A contenção explica
+> os 113 sozinha. Um teste de espera longa precisa da máquina só para ele.
+
+**O que a aritmética garante mesmo sem esse teste:** o backlog máximo caiu de
+15,8 s para 0,5 s. O atraso de 12 s não pode mais acontecer. Se sobrar picote em
+alguma sessão, é outro mecanismo — e o caminho seria inverter o SRT para `caller`
+no Windows, porque em modo caller o ffmpeg não fica bloqueado esperando: conecta
+ou falha rápido, e o supervisor já sabe reerguer.
+
+## 7. O que falta na fase
+
+- [x] **A prova real:** feita em 01/09 — §4.
 - [ ] Rodar o `install-autostart` no Windows e conferir que ele sobe no login.
+- [x] **Limitar o `rtbufsize` do dshow** — feito em 01/09, §6. O áudio voltou a
+      chegar limpo e em sincronia.
+- [ ] Provar o teto no caso de **espera longa**, com a máquina só para o teste
+      (§6). Hoje ele está justificado pela aritmética e pela sessão curta.
+- [ ] Refazer a medição do F3.4 agora: se a espera era o termo que faltava, o
+      offset deve parar de mudar entre execuções — e o `offset_ms = -135` que
+      está no toml desta máquina provavelmente deve ir para 0.
 
 ⛔ **O mDNS não será construído.** O próprio item do PLANO já dizia que só valeria
 se o IP do Windows mudasse de fato — e ele não mudou em nenhuma rodada. Uma
