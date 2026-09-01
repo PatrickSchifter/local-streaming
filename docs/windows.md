@@ -1,18 +1,13 @@
 # O que rodar no Windows
 
 Tudo o que a máquina do Windows precisa fazer, em um lugar só. Os comandos são
-para colar; o **porquê** de cada um está no
-[`proximos-testes.md`](proximos-testes.md) §F3 e no [`fase3.md`](fase3.md), e
-este documento aponta para lá em vez de repetir.
+para colar; o **porquê** de cada um está nos documentos de fase, e este aponta
+para lá em vez de repetir.
 
-> Atualizado em 31/08. **Estado:** F3.1, F3.2 e F3.3 passaram. Falta o número do
-> **F3.4**.
->
-> ✅ **O lado do Windows do F3.4 foi respondido e está limpo.** Medido aqui, sem o
-> Mac: a claquete presta (252/252, viés +10,7 ms), o capturador ouve os bipes na
-> cadência certa, e o pipeline inteiro gravado local entrega **12 flashes e 12
-> bipes em 60 s, mediana −0,3 ms**. O áudio sai desta máquina sincronizado —
-> `fase3.md` §10. O que falta explicar está entre o fio e o `.mkv` do OBS.
+> Atualizado em 01/09. **Estado:** Fases 0 a 4 fechadas. A Fase 5 bateu o
+> critério de saída — a rede caiu 30 s e o par voltou sozinho (`fase5.md` §4).
+> No caminho apareceu e foi corrigido um defeito de áudio que nenhum indicador
+> acusava (§2.2). Os itens abertos estão no §2.
 
 ---
 
@@ -28,130 +23,130 @@ lanstream doctor
 O `doctor` tem que fechar sem FALHA. Se ele acusar `porta 9000/UDP ocupada` sem
 sender no ar, sobrou ffmpeg órfão: `Get-Process ffmpeg | Stop-Process`.
 
-## 2. O passo aberto: já não é aqui
+## 2. O que está aberto aqui
 
-Na rodada de 31/08 o **vídeo** da claquete chegou perfeito no Mac (4 flashes, um
-a cada 5 s) e o **áudio** dela não chegou nunca. A árvore abaixo foi percorrida
-inteira nesta máquina e **deu limpo nos três degraus** (`fase3.md` §10):
+### 2.1 O `install-autostart` sobe no login? ⏱️ 2 min + um logoff
 
-| pergunta | resposta medida |
+O comando está pronto e o `--dry-run` foi conferido nesta máquina. Falta a única
+parte que prova alguma coisa: sair e entrar de novo.
+
+```powershell
+lanstream install-autostart --dry-run   # confira o caminho do toml na linha do send
+lanstream install-autostart
+# logoff / login
+```
+
+Depois do login tem que existir uma janela de console com o `send --watch`
+rodando. Para desfazer: `lanstream install-autostart --remove`.
+
+O `.cmd` termina com `pause` de propósito: se falhar na partida, sem isso a
+janela fecha antes de alguém ler o motivo, e o sintoma vira "não subiu"
+(`fase5.md` §3).
+
+### 2.2 O atraso do áudio ✅ **corrigido em 01/09** — falta uma prova
+
+Diagnosticado e consertado na sessão de 01/09 (`fase5.md` §5 e §6). Fica aqui
+porque o sintoma é fácil de reencontrar e o conserto tem uma ponta solta.
+
+**O que era:** o device dshow abre quando o `send` sobe, mas o listener SRT trava
+o ffmpeg até o OBS conectar. O áudio capturado nessa espera virava fila que
+**nunca drenava** — o consumo depois da conexão é tempo real, igual à produção.
+
+```
+fila default do ffmpeg: 3.041.280 B ÷ 192.000 B/s = 15,8 s de áudio
+
+espera <  15,8 s  ->  áudio limpo, ATRASADO pelo tempo da espera
+espera >  15,8 s  ->  satura: picote contínuo + ~15,8 s de atraso
+```
+
+**O conserto:** `[audio] rtbuffer_ms = 500` (default), que vira `-rtbufsize` e
+limita o backlog máximo a meio segundo. Descartar áudio enquanto ninguém assiste
+não custa nada; o que importa é a conexão começar com áudio fresco.
+
+**A ponta solta:** o caso de **espera longa** ainda não foi provado — a execução
+que confirmou o conserto pegou o OBS em menos de 1 s. Precisa da máquina só para
+o teste, sem o sender de verdade rodando junto (`fase5.md` §6 registra a
+tentativa que não valeu, para não ser repetida).
+
+**Se o sintoma voltar,** ele não aparece em indicador nenhum — durante 16 min com
+5325 quadros de áudio descartados o vídeo esteve em 60 fps cravados, `speed=1x`,
+e o `doctor` passando. Procure no log:
+
+```powershell
+$l = Get-Content logs\lanstream.log -Encoding UTF8
+$i = ($l | Select-String 'sess.o iniciada' | Select-Object -Last 1).LineNumber
+($l[($i-1)..($l.Count-1)] | Select-String 'too full').Count
+```
+
+Zero é o esperado. Se houver, reinicie o ffmpeg com o OBS já tentando conectar —
+`Get-Process ffmpeg | Stop-Process`, que o `--watch` reergue em 1 s.
+
+> O `-Encoding UTF8` não é enfeite: o `Get-Content` do PowerShell 5.1 lê em ANSI,
+> o log é UTF-8, e sem ele **nenhum padrão com acento casa** — a contagem sai
+> sobre o arquivo inteiro, que acumula todas as sessões, e dá um número grande
+> que parece defeito e não é. Mesmo pé no chão do `UnicodeEncodeError` do
+> `conferir` (`fase3.md` §10): confundir o encoding do console com o do texto.
+
+## 3. Os comandos que existem
+
+| comando | para quê |
 |---|---|
-| o arquivo de claquete presta? | ✅ 252 flashes / 252 bipes, viés +10,7 ms |
-| o capturador ouve os bipes? | ✅ `silence_end` a cada 4,99–5,01 s |
-| o pipeline entrega as duas trilhas casadas? | ✅ 12/12 em 60 s, **mediana −0,3 ms** |
+| `lanstream doctor` | ffmpeg, encoders, captura, áudio, SRT, rede e firewall |
+| `lanstream doctor --audio` | só a lista de devices de captura |
+| `lanstream send` | captura e publica em SRT; Ctrl+C encerra |
+| `lanstream send --watch` | **o modo normal de sessão** — reergue o ffmpeg sozinho quando ele cai |
+| `lanstream send --dry-run` | só imprime o argv montado |
+| `lanstream send --no-audio` | só vídeo, byte a byte o comando da Fase 2 |
+| `lanstream send -v` | guarda no log **todas** as linhas de progresso, não a amostra de 30 s |
+| `lanstream receive` | recebe e mostra numa janela — o diagnóstico "é a rede ou é o OBS?" |
+| `lanstream install-autostart` | faz o `send --watch` subir no login (`--dry-run`, `--remove`) |
+| `lanstream config show` | a configuração efetiva, e de qual arquivo ela veio |
 
-O terceiro é o que fecha: são 60 s gravados com o argv **idêntico** ao do `send`,
-só trocando o SRT por arquivo. É o que o Mac receberia.
-
-> **A leitura de ~−48 dB não era o device parado.** Aqui o piso com nada tocando é
-> **−91 dB**; −48 dB é o que se lê quando a média inclui 5 s de silêncio para cada
-> 100 ms de bipe. O que decide é `silencedetect`, não `volumedetect`: um bipe de
-> 2% de duty cycle sempre parece silêncio numa média.
-
-**Então a hipótese que sobra é do OBS, e é verificável:** no F3.3 o áudio **foi
-ouvido**; no F3.4 ele não estava na **gravação**. No OBS ouvir e gravar são
-caminhos diferentes — a trilha da fonte precisa estar na track que está sendo
-gravada (`Saída > Modo Avançado > Gravação`). Uma fonte audível fora da track
-gravada dá exatamente isto: vídeo perfeito, áudio zero, nenhum erro.
-
-### Se precisar refazer a checagem daqui
-
-```powershell
-python scripts\av-sync.py conferir claquete.mp4
-```
-
-| O que ele diz | Significa | Ação |
-|---|---|---|
-| ✅ `o arquivo presta` | vídeo, áudio e as duas coisas casando | o arquivo está bom — o problema é a **reprodução**, siga abaixo |
-| ❌ `NÃO TEM trilha de áudio` | a claquete nasceu muda | gere de novo (§3, passo 4) e rode o `conferir` de novo |
-| ❌ `trilha de áudio existe mas está VAZIA` | a geração falhou no filtro de áudio | me avise: é defeito meu, não seu |
-
-**Se um dia o arquivo prestar e mesmo assim não sair som, é reprodução.** Três
-coisas, nesta ordem:
-
-1. **Nada mais fazendo som.** O `virtual-audio-capturer` captura o endpoint
-   padrão **inteiro**, não o player: jogo aberto, música, navegador e som de
-   notificação entram junto. (Não foi o que houve em 12:16: o piso medido com
-   nada tocando era −91 dB, e o GTA estava na tela mas mudo.)
-2. **O player está mandando para o dispositivo padrão.** `Configurações > Som >
-   Mixer de volume` mostra, por aplicativo, o dispositivo de saída e se está
-   mudo. O padrão desta máquina é a **TV PHILCO** (NVIDIA HDMI) — é ele que o
-   capturador escuta (`fase3.md` §1).
-3. **Se ainda assim não sair som, troque o player** por um que não deixa dúvida:
-
-```powershell
-ffplay -fs -autoexit claquete.mp4
-```
-
-Com a claquete tocando e o `lanstream send` no ar, me avise: eu gravo 2 minutos
-no OBS e meço. **Não precisa esperar eu conectar** — o Media Source do Mac
-reconecta sozinho a cada 2 s.
-
-## 3. A fase inteira, na ordem
-
-```powershell
-# 1. o device de áudio                                          (F3.1)
-lanstream doctor --audio
-
-# 2. colar o nome EXATO no lanstream.toml e ligar:              (F3.2)
-#      [audio]
-#      enabled = true
-#      device  = "virtual-audio-capturer"
-lanstream doctor
-lanstream send --dry-run
-
-# 3. o áudio chega no OBS?                                      (F3.3)
-lanstream send
-lanstream send --no-audio      # só se o de cima falhar (ver §4)
-
-# 4. a claquete                                                 (F3.4)
-python scripts\av-sync.py claquete claquete.mp4 --segundos 1260
-python scripts\av-sync.py conferir claquete.mp4
-lanstream send                 # com a claquete em tela cheia
-
-# 5. a rodada real, jogo em BORDERLESS                          (F3.5)
-lanstream send
-```
-
-Os passos 1 e 2 não precisam de ninguém no Mac. Do 3 em diante, precisam.
+O log da sessão fica em `logs\lanstream.log`, rotativo, e a primeira linha é
+sempre o comando que rodou. **É o primeiro lugar para olhar depois de qualquer
+coisa estranha** — foi ele que revelou o §2.2, invisível no console.
 
 ## 4. Regras que já custaram tempo
 
 **Um `send` atende UMA conexão.** O ffmpeg em SRT `listener` trata a desconexão
-do caller como erro fatal e morre. Cada rodada serve um cliente; para trocar de
-cliente, reinicie o sender.
+do caller como erro fatal e morre. O `--watch` resolve isso na prática — ele
+reergue e o Media Source do OBS reconecta sozinho a cada 2 s, medido em ~25 s de
+ponta a ponta —, mas o processo do ffmpeg é outro a cada rodada, e é por isso que
+o contador de quadros zera no log.
 
-> Corolário que me enganou em 31/08: **uma sonda de fora não distingue "sender
-> morto" de "sender ocupado servindo o OBS"**. Eu conectei um
-> `srt-live-transmit` do Mac, não entrei, e concluí que não havia ninguém
-> escutando — havia, e estava entregando para o OBS o tempo todo. Se precisar
-> testar por fora, use **outra porta** e um segundo `send`, ou pare o OBS antes.
+> Corolário que já enganou: **uma sonda de fora não distingue "sender morto" de
+> "sender ocupado servindo o OBS"**. Se precisar testar por fora, use **outra
+> porta** e um segundo `send`, ou pare o OBS antes.
 
 **Fullscreen exclusivo derruba a captura.** `DXGI_ERROR_ACCESS_LOST` em ~4 s. O
 jogo tem que estar em **borderless** (`proximos-testes.md` §F2.3-bis).
 
 **Quando as duas pontas discordam, vale a que tem o log.** Já erramos duas vezes
-inferindo causa no emissor a partir de sintoma no receptor. O console do `send`
-tem a resposta; o `ENDED` do OBS não tem.
+inferindo causa no emissor a partir de sintoma no receptor.
 
-**Não escreva nada no `[audio] offset_ms` sem medir.** O sender já foi medido e
-está alinhado em 21 ms, antes e depois do SRT (`fase3.md` §8). O que soou 2–3 s
-atrasado era o caminho de **monitoração** do OBS, que nem entra na gravação
-(`fase3.md` §9).
+**Não escreva nada no `[audio] offset_ms` sem medir — e talvez nem depois.** O
+`fase3.md` §13 mediu o mesmo offset variando por um fator de vinte **entre
+execuções**, com o sinal trocado: um valor correto numa conexão errou por 730 ms
+na seguinte. O `-135` que está no toml hoje é herança dessa medição e é suspeito.
+Enquanto o §2.2 não fechar, ele vale menos que zero.
 
-**Nada mais pode estar tocando durante o F3.4.** Ver §2.
+**O `[watch]` acerta a ação e pode errar a frase.** Ele classificou uma queda da
+placa de rede local como "o receptor desconectou", porque o ffmpeg entrega o
+mesmo `I/O error` nos dois casos (`fase5.md` §4). Reergueu certo; só não acredite
+na causa que ele nomeia sem olhar o resto.
 
 ## 5. Sintoma → onde olhar
 
 | Sintoma | Causa provável | O que fazer |
 |---|---|---|
 | o `send` sobe e morre em ~4 s | `DXGI_ERROR_ACCESS_LOST` — fullscreen exclusivo | borderless |
-| o `send` nem sobe, com áudio ligado | o device dshow | `lanstream send --no-audio`: se funcionar, é o áudio e só ele — o comando sem áudio é **byte a byte** o da Fase 2 |
+| o `send` nem sobe, com áudio ligado | o device dshow | `lanstream send --no-audio`: se funcionar, é o áudio e só ele |
 | `Address already in use` | ffmpeg órfão | `Get-Process ffmpeg | Stop-Process` |
-| o doctor diz que o `host` não é desta máquina | o DHCP trocou o IP, ou o toml é anterior ao 010d763 | a mensagem do doctor lista as duas hipóteses |
+| o contador de quadros zerou no meio da sessão | o `--watch` reergueu | normal — procure a linha `[watch]` no log para saber por quê |
+| `real-time buffer ... frame dropped` no áudio | §2.2, **aberto e audível** | é o picote; reinicie o `send` com o OBS já tentando conectar |
+| o doctor diz que o `host` não é desta máquina | o DHCP trocou o IP | a mensagem do doctor lista as hipóteses |
 | `doctor --audio` não lista nada | nenhum device de captura | `fase3.md` §1 tem a ordem de tentativa |
-| device listado como `loopback` mas o Mac não ouve nada | Stereo Mix da placa errada | mede-se com `volumedetect`: `fase3.md` §1 |
-| o Mac não recebe imagem | quase sempre o sender morreu | as últimas linhas do console do `send` |
+| o Mac não recebe imagem | quase sempre o sender morreu | as últimas linhas de `logs\lanstream.log` |
 
 ## 6. A config desta máquina, para conferência
 
@@ -162,9 +157,13 @@ peer = "192.168.0.21"   # o Mac
 port = 9000
 
 [audio]
-enabled = true
-device  = "virtual-audio-capturer"
+enabled   = true
+device    = "virtual-audio-capturer"
+buffer_ms = 200
+offset_ms = -135        # suspeito — ver §4
 ```
 
-O `lanstream.toml` é ignorado pelo git de propósito: cada máquina tem o seu. Se a
-porta mudar para um teste, **devolva o 9000 depois** — o OBS do Mac aponta para lá.
+O `lanstream.toml` é ignorado pelo git de propósito: cada máquina tem o seu. O
+`logs/` também, e por um motivo mais forte — o arquivo tem caminho de máquina, IP
+e nome de device, e nada disso volta para o repositório. Se a porta mudar para um
+teste, **devolva o 9000 depois**: o OBS do Mac aponta para lá.
